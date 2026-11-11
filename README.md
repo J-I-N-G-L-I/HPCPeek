@@ -1,12 +1,12 @@
 # HPCPeek
 
-A quiet desktop window for your University of Leeds **Aire and Calder** jobs and GPU availability. Keep it beside your editor or paper, then expand when you need the details.
+A quiet floating window for University of Leeds HPC jobs and GPU availability. Keep it beside your IDE or paper, then expand when you need the details.
 
 ![HPCPeek compact window showing both clusters](docs/images/compact.png)
 
 ## Download
 
-Open **Releases → Assets** and download the ZIP for your computer. Extract the **whole archive**, then open `HPCPeek.exe` on Windows or `HPCPeek.app` on macOS.
+Open **Releases -> Assets** and download the ZIP for your computer. Extract the **whole archive**, then open `HPCPeek.exe` on Windows or `HPCPeek.app` on macOS.
 
 | Platform | v1.0.0 package |
 | --- | --- |
@@ -54,23 +54,6 @@ Screenshots use offline Demo data. Free GPUs do not guarantee an immediate start
 
 HPCPeek runs read-only Slurm queries; it does not submit or cancel jobs. There is no telemetry or cloud credential sync. Connection settings, usernames and trusted host fingerprints are stored locally, separately from saved passwords. Keep your `portable-data` folder private when sharing a Windows installation; on macOS, settings are stored in `~/Library/Application Support/HPCPeek`.
 
-## Memory use
+## Contributing & Feedback
 
-The compact offline Demo used **about 45 MiB of private resident memory** in a local Windows 11 x64 measurement: three fresh processes, each sampled for 30 seconds. Live connections, job count, expanded details and graphics drivers affect usage. This is a reference measurement, not a memory limit; total working set and committed memory are different counters.
-
-<details>
-<summary>Build from source</summary>
-
-Install .NET 10 SDK and PowerShell 7, then run:
-
-```powershell
-./scripts/test.ps1
-dotnet run --project ./src/AirePeek.Desktop -- --demo
-./scripts/build-portable.ps1 -Version 1.0.0 -AllPlatforms
-```
-
-See the [build and release guide](docs/BUILD-CROSSPLATFORM.md) for platform requirements, macOS signing and GitHub publication. Source folders and namespaces retain the original `AirePeek` name; the shipped app is **HPCPeek**.
-
-</details>
-
-Independent software; not affiliated with or endorsed by the University of Leeds or Slurm. [Third-party notices](docs/THIRD-PARTY-NOTICES.md)
+This is an independent software, contributions, issues, and feature requests are welcome! Thank you for making this project better!
