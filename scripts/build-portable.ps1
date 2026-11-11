@@ -65,9 +65,9 @@ Do not disable system security protections. Public distribution requires the doc
         Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination $packageRoot
         $docsOutput = Join-Path $packageRoot 'docs'
         New-Item -ItemType Directory -Force -Path $docsOutput | Out-Null
-        foreach ($name in @('QUICKSTART.zh-CN.md','REAL-AIRE-VALIDATION.zh-CN.md','SECURITY.md','THIRD-PARTY-NOTICES.md')) {
+        foreach ($name in @('BUILD-CROSSPLATFORM.md','THIRD-PARTY-NOTICES.md')) {
             $doc = Join-Path $repoRoot "docs/$name"
-            if (Test-Path -LiteralPath $doc) { Copy-Item -LiteralPath $doc -Destination $docsOutput }
+            Copy-Item -LiteralPath $doc -Destination $docsOutput
         }
         # Only the two end-user README images travel with the app; audit galleries remain in source/artifacts.
         $readmeImages = Join-Path $repoRoot 'docs/images'

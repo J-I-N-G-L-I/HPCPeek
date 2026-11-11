@@ -53,10 +53,13 @@ __pycache__/
 *.bak
 *~
 
-# Local design history and generated QA; curated docs/images remains tracked
+# Local design history
 /AIRE-Peek-Redesign-Prompt.md
 /design-qa.md
-/docs/DELIVERY-*.md
-/docs/verification.md
-/docs/redesign/
-/docs/screenshots/
+
+# Publish only the curated documentation; keep other docs local
+/docs/*
+!/docs/BUILD-CROSSPLATFORM.md
+!/docs/THIRD-PARTY-NOTICES.md
+!/docs/images/
+!/docs/licenses/

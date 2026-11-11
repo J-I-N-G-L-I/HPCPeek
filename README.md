@@ -52,13 +52,11 @@ Screenshots use offline Demo data. Free GPUs do not guarantee an immediate start
 
 **Use one password for both hosts** is a separate, optional convenience for matching gateway and cluster passwords. **Duo approvals, SMS codes and other one-time answers are never saved or shared.** Remembering a password cannot bypass the university's authentication requirements. A changed host fingerprint stops the connection.
 
-HPCPeek runs read-only Slurm queries; it does not submit or cancel jobs. There is no telemetry or cloud credential sync. [Security details](docs/SECURITY.md) · [中文快速上手](docs/QUICKSTART.zh-CN.md)
+HPCPeek runs read-only Slurm queries; it does not submit or cancel jobs. There is no telemetry or cloud credential sync. Connection settings, usernames and trusted host fingerprints are stored locally, separately from saved passwords. Keep your `portable-data` folder private when sharing a Windows installation; on macOS, settings are stored in `~/Library/Application Support/HPCPeek`.
 
 ## Memory use
 
-For reference, **about 45 MiB of private resident memory** was measured on Windows 11 x64 with the compact offline Demo. Three fresh processes were sampled for 30 seconds each; the median of their final ten-second averages was **44.83 MiB before / 44.76 MiB after** the v1.0.0 optimization. This is effectively unchanged within normal variation, not a meaningful RAM reduction.
-
-The update reduces repeated GPU-summary calculations and status binding work. A connected session around **63 MB should still be expected to stay in that general range**, not drop dramatically; authentication, job count, open details and graphics drivers affect usage. This is a rough expectation, not a memory limit. Total working set and committed memory are different, larger counters. macOS memory use has not been measured locally.
+The compact offline Demo used **about 45 MiB of private resident memory** in a local Windows 11 x64 measurement: three fresh processes, each sampled for 30 seconds. Live connections, job count, expanded details and graphics drivers affect usage. This is a reference measurement, not a memory limit; total working set and committed memory are different counters.
 
 <details>
 <summary>Build from source</summary>
@@ -71,7 +69,7 @@ dotnet run --project ./src/AirePeek.Desktop -- --demo
 ./scripts/build-portable.ps1 -Version 1.0.0 -AllPlatforms
 ```
 
-The source checkout includes `docs/BUILD-CROSSPLATFORM.md` and `docs/GITHUB-RELEASES.md` for build, signing and publication instructions. Source folders and namespaces retain the original `AirePeek` name; the shipped app is **HPCPeek**.
+See the [build and release guide](docs/BUILD-CROSSPLATFORM.md) for platform requirements, macOS signing and GitHub publication. Source folders and namespaces retain the original `AirePeek` name; the shipped app is **HPCPeek**.
 
 </details>
 
