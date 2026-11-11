@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <ProjectReference Include="../../src/AirePeek.Core/AirePeek.Core.csproj" />
+    <ProjectReference Include="../../src/AirePeek.Ssh/AirePeek.Ssh.csproj" />
+    <!-- Compile the actual store/controller; tests inject dispatch and do not need a GUI renderer. -->
+    <Compile Include="../../src/AirePeek.Desktop/Infrastructure/SettingsStore.cs" Link="Production/SettingsStore.cs" />
+    <Compile Include="../../src/AirePeek.Desktop/Infrastructure/SettingsJsonContext.cs" Link="Production/SettingsJsonContext.cs" />
+    <Compile Include="../../src/AirePeek.Desktop/AppController.cs" Link="Production/AppController.cs" />
+    <Compile Include="../../src/AirePeek.Desktop/ClusterWorkspace.cs" Link="Production/ClusterWorkspace.cs" />
+    <Compile Include="../../src/AirePeek.Desktop/WindowSizing.cs" Link="Production/WindowSizing.cs" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

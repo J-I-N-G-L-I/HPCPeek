@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AirePeek.Desktop/AirePeek.Desktop.csproj" />
+    <Project Path="src/AirePeek.Core/AirePeek.Core.csproj" />
+    <Project Path="src/AirePeek.Ssh/AirePeek.Ssh.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AirePeek.Core.Tests/AirePeek.Core.Tests.csproj" />
+    <Project Path="tests/AirePeek.Ssh.Tests/AirePeek.Ssh.Tests.csproj" />
+    <Project Path="tests/AirePeek.Desktop.Tests/AirePeek.Desktop.Tests.csproj" />
+  </Folder>
+</Solution>

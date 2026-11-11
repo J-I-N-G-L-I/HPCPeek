@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>HPCPeek</AssemblyName>
+    <Title>HPCPeek</Title>
+    <Product>HPCPeek</Product>
+    <Description>Portable desktop monitor for AIRE and Calder Slurm jobs and GPU node capacity.</Description>
+    <RootNamespace>AirePeek.Desktop</RootNamespace>
+    <ApplicationIcon>Assets/hpcpeek-app.ico</ApplicationIcon>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishSingleFile>false</PublishSingleFile>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationManifest Condition="$([MSBuild]::IsOSPlatform('Windows'))">app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(HpcPeekPortable)' == 'true'">
+    <!-- Supported partial trimming removes unused framework code. Keep application and SSH/crypto
+         implementations intact, including algorithms selected by a real server at runtime. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <ILLinkTreatWarningsAsErrors>true</ILLinkTreatWarningsAsErrors>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(HpcPeekPortable)' == 'true'">
+    <TrimmerRootAssembly Include="HPCPeek;AirePeek.Core;AirePeek.Ssh;Renci.SshNet;BouncyCastle.Cryptography" />
+    <!-- The app has no designer entry point. Let reachability analysis remove the unused IDE bridge. -->
+    <TrimmableAssembly Include="Avalonia.DesignerSupport" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <ProjectReference Include="../AirePeek.Core/AirePeek.Core.csproj" />
+    <ProjectReference Include="../AirePeek.Ssh/AirePeek.Ssh.csproj" />
+    <AvaloniaResource Include="Assets/hpcpeek-app.ico;Assets/hpcpeek-tray-dark.ico;Assets/hpcpeek-tray-light.ico;Assets/Icons/*.svg" />
+  </ItemGroup>
+</Project>
