@@ -37,6 +37,8 @@ internal sealed class MainWindow : Window
     private readonly Border nodeInspector;
     private readonly ComboBox model = new() { MinWidth = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Button connectCluster;
+    private readonly Button clearCompleted;
+    private readonly StorageBar homeStorage = new("Home"), scratchStorage = new("Scratch");
     private readonly Dictionary<string, JobRow> jobRows = new(StringComparer.Ordinal);
     private readonly Button pin, more, expandChevron;
     private readonly MenuItem refreshMenu;
@@ -72,14 +74,14 @@ internal sealed class MainWindow : Window
     public MainWindow(SettingsStore settings, ClusterWorkspace workspace, Action quit, bool inspect = false)
     {
         this.settings = settings; Workspace = workspace; authentication = new(this, text => Controller.ReportAuthentication(text));
-        Title = "HPCPeek"; Icon = AppBrand.CreateWindowIcon(); Width = 340; Height = CompactHeight; CanResize = false;
+        Title = "HPCPeek"; Icon = AppBrand.CreateWindowIcon(); Width = WindowSizing.CompactWidth; Height = CompactHeight; CanResize = false;
         WindowDecorations = WindowDecorations.None; ShowInTaskbar = inspect; Topmost = settings.Value.IsPinned;
         Background = Brushes.Transparent; TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
         FontFamily = OperatingSystem.IsWindows() ? new("Segoe UI") : FontFamily.Default;
         var surface = new Border { CornerRadius = new(10), BorderThickness = new(1), ClipToBounds = true };
         surface.Classes.Add("surface"); CaptureRoot = surface; Content = surface;
         var layout = new Grid { RowDefinitions = new($"{CompactHeight - 2},*") }; surface.Child = layout;
-        var compact = new Grid { Margin = new(14, 7, 14, 7), RowDefinitions = new("26,74,*") }; layout.Children.Add(compact);
+        var compact = new Grid { Margin = new(14, 7, 14, 7), RowDefinitions = new("26,94,*") }; layout.Children.Add(compact);
         var header = new Grid { ColumnDefinitions = new("Auto,Auto,Auto,*,24,24"), Background = Brushes.Transparent };
         var brand = Ui.Text("HPCPeek", 14); brand.FontWeight = FontWeight.SemiBold; brand.VerticalAlignment = VerticalAlignment.Center; header.Children.Add(brand);
         Grid.SetColumn(connectionDot, 1); header.Children.Add(connectionDot);
@@ -94,22 +96,28 @@ internal sealed class MainWindow : Window
             if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && e.Source is Visual source && source is not Button && !source.GetVisualAncestors().OfType<Button>().Any()) BeginMoveDrag(e);
         };
         compact.Children.Add(header);
-        var overview = new Grid { ColumnDefinitions = new("*,156"), Margin = new(0, 2, 0, 0) }; Grid.SetRow(overview, 1); compact.Children.Add(overview);
-        var metrics = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 25, VerticalAlignment = VerticalAlignment.Center };
+        var overview = new Grid { ColumnDefinitions = new("168,*,88"), Margin = new(0, 2, 0, 0) }; Grid.SetRow(overview, 1); compact.Children.Add(overview);
+        var metricColumn = new StackPanel { Name = "CompactMetrics", Spacing = 12, VerticalAlignment = VerticalAlignment.Center }; overview.Children.Add(metricColumn);
+        var metrics = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
         metrics.Children.Add(Metric(running, "Running")); metrics.Children.Add(Metric(queued, "Queued"));
         ExpandButton = Ui.Button("Expand details", () => SetExpanded(!expanded), true); ExpandButton.Content = metrics;
-        ExpandButton.HorizontalContentAlignment = HorizontalAlignment.Left; overview.Children.Add(ExpandButton);
-        var maps = new StackPanel { Name = "CompactClusters", Spacing = 8, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
-        Grid.SetColumn(maps, 1); overview.Children.Add(maps);
+        ExpandButton.HorizontalContentAlignment = HorizontalAlignment.Left; metricColumn.Children.Add(ExpandButton);
+        var storage = new StackPanel { Name = "CompactStorage", Orientation = Orientation.Horizontal, Spacing = 16 };
+        storage.Children.Add(homeStorage); storage.Children.Add(scratchStorage);
+        metricColumn.Children.Add(storage);
+        var maps = new StackPanel { Name = "CompactClusters", Orientation = Orientation.Vertical, Spacing = 8, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left };
+        Grid.SetColumn(maps, 2); overview.Children.Add(maps);
         foreach (var cluster in ClusterCatalog.All)
         {
-            var map = new GpuNodeGrid(true) { VerticalAlignment = VerticalAlignment.Center }; compactMaps.Add(cluster.Id, map);
-            var row = new Grid { ColumnDefinitions = new("48,88"), MinHeight = cluster.Id == ClusterCatalog.AireId ? 45 : 9 };
+            var map = new GpuNodeGrid(true) { VerticalAlignment = VerticalAlignment.Top }; compactMaps.Add(cluster.Id, map);
+            var group = new StackPanel { Width = 88, Spacing = 3, VerticalAlignment = VerticalAlignment.Top };
             var label = Ui.Button(cluster.Name, () => _ = SelectClusterAsync(cluster.Id), true);
-            label.Content = Ui.Text(cluster.Name, 10, "muted"); label.HorizontalContentAlignment = HorizontalAlignment.Left; label.MinHeight = 0;
-            row.Children.Add(label); Grid.SetColumn(map, 1); row.Children.Add(map);
-            var state = Ui.Text("No data", 9, "muted"); state.VerticalAlignment = VerticalAlignment.Center;
-            compactStates.Add(cluster.Id, state); Grid.SetColumn(state, 1); row.Children.Add(state); maps.Children.Add(row);
+            label.Name = "CompactClusterLabel-" + cluster.Id;
+            var clusterName = Ui.Text(cluster.Name, 10, "muted"); clusterName.LineHeight = 12; label.Content = clusterName;
+            label.HorizontalContentAlignment = HorizontalAlignment.Left; label.MinHeight = 0; group.Children.Add(label);
+            var matrix = new Grid { MinHeight = cluster.Id == ClusterCatalog.AireId ? 45 : 9 }; matrix.Children.Add(map);
+            var state = Ui.Text("No data", 9, "muted"); state.VerticalAlignment = VerticalAlignment.Top;
+            compactStates.Add(cluster.Id, state); matrix.Children.Add(state); group.Children.Add(matrix); maps.Children.Add(group);
             map.Selected += async tile =>
             {
                 var refresh = SelectClusterAsync(cluster.Id);
@@ -117,8 +125,8 @@ internal sealed class MainWindow : Window
                 await refresh; // A slow read must not navigate back after the user switches again.
             };
         }
-        var footer = new Grid { ColumnDefinitions = new("*,24"), Margin = new(0, 3, 0, 0) }; Grid.SetRow(footer, 2); compact.Children.Add(footer);
-        var gpuButton = Ui.Button("Expand cluster details", () => SetExpanded(!expanded), true); gpuButton.Content = gpuSummary; footer.Children.Add(gpuButton);
+        var footer = new Grid { Name = "CompactFooter", ColumnDefinitions = new("*,24"), Margin = new(0, 6, 0, 0) }; Grid.SetRow(footer, 2); compact.Children.Add(footer);
+        var gpuButton = Ui.Button("Expand cluster details", () => SetExpanded(!expanded), true); gpuButton.MinHeight = 26; gpuButton.Content = gpuSummary; footer.Children.Add(gpuButton);
         gpuSummary.VerticalAlignment = VerticalAlignment.Center; gpuSummary.TextTrimming = TextTrimming.CharacterEllipsis;
         expandChevron = IconButton("chevron-down", "Expand details", () => SetExpanded(!expanded)); Grid.SetColumn(expandChevron, 1); footer.Children.Add(expandChevron);
         var details = new StackPanel { Margin = new(14, 0, 14, 14), Spacing = 0 };
@@ -142,7 +150,17 @@ internal sealed class MainWindow : Window
         partial.Text = "Partial visibility. Unknown capacity is excluded."; details.Children.Add(partial);
         nodeInspector = new Border { Child = selectedNode, Padding = new(10), CornerRadius = new(8), Margin = new(0, 8, 0, 0), IsVisible = false };
         nodeInspector.Classes.Add("panel"); details.Children.Add(nodeInspector);
-        details.Children.Add(Ui.Rule(8)); details.Children.Add(Heading("My jobs", jobsAge)); details.Children.Add(jobsError); details.Children.Add(emptyJobs); details.Children.Add(jobs); details.Children.Add(departed);
+        clearCompleted = Ui.Button("Clear completed", () => Controller.Monitor?.ClearCompletedJobs());
+        clearCompleted.Name = "ClearCompletedJobs";
+        clearCompleted.FontSize = 10; clearCompleted.MinHeight = 24; clearCompleted.Padding = new(7, 3);
+        clearCompleted.Margin = new(8, 0, 0, 0);
+        ToolTip.SetTip(clearCompleted, "Remove finished jobs from this cluster's list. Running, queued and unconfirmed jobs stay. No remote jobs or files are changed.");
+        var jobsHeading = new Grid { ColumnDefinitions = new("Auto,Auto,*"), Margin = new(0, 5, 0, 6) };
+        var jobsTitle = Ui.Heading("My jobs"); jobsTitle.VerticalAlignment = VerticalAlignment.Center; jobsHeading.Children.Add(jobsTitle);
+        Grid.SetColumn(clearCompleted, 1); jobsHeading.Children.Add(clearCompleted);
+        jobsAge.HorizontalAlignment = HorizontalAlignment.Right; jobsAge.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(jobsAge, 2); jobsHeading.Children.Add(jobsAge);
+        details.Children.Add(Ui.Rule(8)); details.Children.Add(jobsHeading); details.Children.Add(jobsError); details.Children.Add(emptyJobs); details.Children.Add(jobs); details.Children.Add(departed);
         refreshMenu = new() { Header = "Refresh", Icon = Icons.Create("refresh-cw"), InputGesture = Shortcut(Key.R) };
         refreshMenu.Click += async (_, _) => await RefreshOrReconnectAsync();
         var preferences = new MenuItem { Header = "Settings…", Icon = Icons.Create("settings"), InputGesture = Shortcut(Key.OemComma) };
@@ -170,8 +188,9 @@ internal sealed class MainWindow : Window
     }
     private static Control Metric(TextBlock value, string label)
     {
-        value.FontWeight = FontWeight.SemiBold; value.LineHeight = 32;
-        var block = new StackPanel { Spacing = 0 }; block.Children.Add(value); block.Children.Add(Ui.Text(label, 11, "muted")); return block;
+        value.FontWeight = FontWeight.SemiBold; value.LineHeight = 30;
+        var block = new StackPanel { Width = StorageBar.MeterWidth, Spacing = 0 }; block.Children.Add(value);
+        var caption = Ui.Text(label, 11, "muted"); caption.LineHeight = 13; block.Children.Add(caption); return block;
     }
     private static Control Legend(string text, string brush)
     {
@@ -290,6 +309,7 @@ internal sealed class MainWindow : Window
         jobsError.Text = Controller.Monitor?.JobsError ?? Controller.Monitor?.HistoryError ?? ""; jobsError.IsVisible = !string.IsNullOrEmpty(jobsError.Text);
         gpuError.Text = Controller.Monitor?.GpuError ?? ""; gpuError.IsVisible = !string.IsNullOrEmpty(gpuError.Text);
         var snapshot = Controller.Monitor?.Jobs;
+        clearCompleted.IsEnabled = snapshot?.Departed.Any(past => new AccountingResult(past.Job.Id, past.State, past.ExitCode).IsTerminal) == true;
         emptyJobs.IsVisible = snapshot == null || snapshot.Jobs.Count == 0;
         emptyJobs.Text = snapshot == null ? "Connect to view jobs" : Controller.IsConnected ? "No active jobs" : "Last sample: no active jobs";
         var current = snapshot?.Jobs.OrderByDescending(j => j.IsPending).ThenByDescending(j => j.Id, StringComparer.Ordinal).ToArray() ?? [];
@@ -353,10 +373,22 @@ internal sealed class MainWindow : Window
         SampleFreshness Fresh(AppController c, bool gpu) => SampleFreshness.Evaluate(gpu ? c.Monitor?.Gpus?.SampledAt : c.Monitor?.Jobs?.SampledAt,
             c.Monitor?.RefreshInterval ?? TimeSpan.FromSeconds(settings.Value.RefreshIntervalSeconds), now, c.Monitor?.IsDisconnected == true);
         var q = Fresh(Controller, false); var g = Fresh(Controller, true);
-        var oldestJobs = Workspace.Entries.Select(c => Fresh(c, false)).Where(f => f.State != FreshnessState.Never).OrderByDescending(f => f.Age).FirstOrDefault();
-        var oldestGpu = Workspace.Entries.Select(c => Fresh(c, true)).Where(f => f.State != FreshnessState.Never).OrderByDescending(f => f.Age).FirstOrDefault();
-        ages.Text = $"Jobs {ShortAge(oldestJobs)} · GPUs {ShortAge(oldestGpu)}";
-        ToolTip.SetTip(ages, "Oldest available sample · ! means stale or offline\n" + string.Join("\n", Workspace.Entries.Select(c => $"{c.Cluster.Name} — Jobs: {Fresh(c, false).Label}; GPUs: {Fresh(c, true).Label}")));
+        SampleFreshness StorageFresh(AppController c, bool scratch) => SampleFreshness.Evaluate(scratch ? c.Monitor?.Storage?.Scratch.SampledAt : c.Monitor?.Storage?.Home.SampledAt,
+            c.Monitor?.RefreshInterval ?? TimeSpan.FromSeconds(settings.Value.RefreshIntervalSeconds), now, c.Monitor?.IsDisconnected == true);
+        var lastRefresh = new[] { Controller.Monitor?.Jobs?.SampledAt, Controller.Monitor?.Gpus?.SampledAt,
+            Controller.Monitor?.Storage?.Home.SampledAt, Controller.Monitor?.Storage?.Scratch.SampledAt }.Max();
+        var refreshAge = SampleFreshness.Evaluate(lastRefresh, Controller.Monitor?.RefreshInterval ?? MonitorService.DefaultRefreshInterval,
+            now, Controller.Monitor?.IsDisconnected == true);
+        ages.Text = $"Refresh {ShortAge(refreshAge)}";
+        ages.Classes.Set("attention", refreshAge.NeedsAttention || q.NeedsAttention || g.NeedsAttention || Controller.Monitor?.JobsError != null || Controller.Monitor?.GpuError != null || Controller.Monitor?.StorageError != null);
+        ToolTip.SetTip(ages, $"{Controller.Cluster.Name}: time since the latest successful sample · ! means stale or offline\n" + string.Join("\n", Workspace.Entries.Select(c =>
+            $"{c.Cluster.Name} — Jobs: {Fresh(c, false).Label}; GPUs: {Fresh(c, true).Label}; Home: {StorageFresh(c, false).Label}; Scratch: {StorageFresh(c, true).Label}" +
+            string.Concat(new[] { c.Monitor?.JobsError, c.Monitor?.GpuError, c.Monitor?.StorageError }.Where(e => e is not null).Select(e => "\n" + e)))));
+        var storageSnapshot = Controller.Monitor?.Storage;
+        homeStorage.Update(storageSnapshot?.Home, Controller.Cluster.Name, Controller.Monitor?.StorageError,
+            Controller.Monitor?.RefreshInterval ?? MonitorService.DefaultRefreshInterval, now, !Controller.IsConnected);
+        scratchStorage.Update(storageSnapshot?.Scratch, Controller.Cluster.Name, Controller.Monitor?.StorageError,
+            Controller.Monitor?.RefreshInterval ?? MonitorService.DefaultRefreshInterval, now, !Controller.IsConnected);
         jobsAge.Text = q.Label; gpuAge.Text = g.Label;
         jobsAge.Classes.Set("attention", q.NeedsAttention); gpuAge.Classes.Set("attention", g.NeedsAttention);
         ToolTip.SetTip(ExpandButton, "Jobs across sampled clusters\n" + string.Join("\n", Workspace.Entries.Select(c => $"{c.Cluster.Name}: {c.Monitor?.Jobs?.Jobs.Count(j => j.IsRunning).ToString() ?? "—"} running · {c.Monitor?.Jobs?.Jobs.Count(j => j.IsPending).ToString() ?? "—"} queued · {Fresh(c, false).Label}")));
@@ -373,8 +405,9 @@ internal sealed class MainWindow : Window
         int seconds = (int)Math.Ceiling(Controller.Monitor?.RefreshCooldownRemaining.TotalSeconds ?? 0);
         if (refreshMenu != null)
         {
-            refreshMenu.Header = Controller.IsConnecting ? "Cancel connection" : !Controller.IsConnected ? $"Connect to {Controller.Cluster.Name}…" : seconds > 0 ? $"Refresh in {seconds}s" : $"Refresh {Controller.Cluster.Name}";
+            refreshMenu.Header = Controller.IsConnecting ? "Cancel connection" : !Controller.IsConnected ? $"Connect to {Controller.Cluster.Name}…" : "Refresh";
             refreshMenu.IsEnabled = Controller.IsConnecting || !Controller.IsConnected || seconds == 0;
+            ToolTip.SetTip(refreshMenu, seconds > 0 ? $"Available in {seconds}s" : $"Refresh {Controller.Cluster.Name}");
         }
     }
     private static string ShortAge(SampleFreshness? f)

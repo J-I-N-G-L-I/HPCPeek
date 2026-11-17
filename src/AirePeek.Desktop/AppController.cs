@@ -193,7 +193,7 @@ internal sealed class AppController : IAsyncDisposable
         if (session != null) await session.DisposeAsync();
         lock (lifecycle)
         {
-            session = replacement; Monitor = new(session, timeProvider, refreshInterval: TimeSpan.FromSeconds(settings.Value.RefreshIntervalSeconds));
+            session = replacement; Monitor = new(session, timeProvider, refreshInterval: TimeSpan.FromSeconds(settings.Value.RefreshIntervalSeconds), clusterId: ClusterId);
             Interlocked.Exchange(ref refreshRequested, 0);
             Monitor.Updated += Raise; BindNotifications(Monitor, generation);
         }

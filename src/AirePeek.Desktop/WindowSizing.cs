@@ -4,7 +4,8 @@ namespace AirePeek.Desktop;
 
 internal static class WindowSizing
 {
-    public const int CompactHeight = 148;
+    public const int CompactWidth = 320;
+    public const int CompactHeight = 168;
     // Work area uses physical pixels. Leave space for both edges on high-DPI/laptop displays.
     public static double ExpandedHeight(double workAreaPixels, double scale) =>
         Math.Clamp(Math.Floor(workAreaPixels / Math.Max(.5, scale) - 24), CompactHeight, 720);

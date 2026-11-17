@@ -24,6 +24,7 @@ public sealed class AppControllerTests : IDisposable
         Assert.Equal(warning, controller.Message);
         Assert.NotNull(controller.Monitor!.Jobs);
         Assert.NotNull(controller.Monitor.Gpus);
+        Assert.NotNull(controller.Monitor.Storage);
         Assert.True(new SettingsStore(directory).Value.Connection!.RememberPassword);
 
         controller.Monitor.ResetAfterConnect();
@@ -31,7 +32,7 @@ public sealed class AppControllerTests : IDisposable
         Assert.True(controller.IsConnected);
         Assert.Equal(warning, controller.Message);
         Assert.Equal(1, wire.ConnectCount);
-        Assert.Equal(4, wire.CommandCount);
+        Assert.Equal(6, wire.CommandCount);
     }
 
     [Fact]
@@ -60,7 +61,7 @@ public sealed class AppControllerTests : IDisposable
         Assert.True(controller.IsConnected);
         Assert.False(wire.LastConnectionProfile!.RememberPassword);
         Assert.Equal(2, wire.ConnectCount);
-        Assert.Equal(2, wire.CommandCount);
+        Assert.Equal(3, wire.CommandCount);
     }
 
     [Fact]
@@ -143,13 +144,13 @@ public sealed class AppControllerTests : IDisposable
         store.Value.RefreshIntervalSeconds = 30; store.Save(); controller.ApplyPreferences();
         Assert.Same(monitor, controller.Monitor); Assert.Same(jobs, monitor.Jobs); Assert.Same(gpus, monitor.Gpus);
         Assert.Equal(TimeSpan.FromSeconds(30), monitor.RefreshInterval);
-        Assert.Equal(1, wire.ConnectCount); Assert.Equal(2, wire.CommandCount);
+        Assert.Equal(1, wire.ConnectCount); Assert.Equal(3, wire.CommandCount);
         Assert.True(controller.IsConnected);
 
         await controller.InvalidateAsync();
         store.Value.RefreshIntervalSeconds = 3600; controller.ApplyPreferences(); await controller.PollAsync();
         Assert.True(monitor.IsDisconnected); Assert.Equal(TimeSpan.FromMinutes(60), monitor.RefreshInterval);
-        Assert.Equal(1, wire.ConnectCount); Assert.Equal(2, wire.CommandCount);
+        Assert.Equal(1, wire.ConnectCount); Assert.Equal(3, wire.CommandCount);
     }
 
     [Fact]
@@ -326,7 +327,7 @@ public sealed class AppControllerTests : IDisposable
         Assert.True(monitor.IsDisconnected);
         Assert.False(controller.IsConnected);
         Assert.Equal(2, wire.ConnectCount);
-        Assert.Equal(2, wire.CommandCount);
+        Assert.Equal(3, wire.CommandCount);
     }
 
     private AppController Create(ControlledSession wire) => new(new SettingsStore(directory), () => wire, action => action());
@@ -358,8 +359,10 @@ public sealed class AppControllerTests : IDisposable
         {
             CommandCount++; QueryEntered.TrySetResult();
             if (HoldQueries) await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct);
-            return command == SlurmCommands.Queue ? "42|test experiment|RUNNING|1:00|1:00:00|node1|None"
-                : "NodeName=node1 State=MIXED CfgTRES=cpu=8,gres/gpu=4,gres/gpu:l40s=4 AllocTRES=cpu=2,gres/gpu=2,gres/gpu:l40s=2";
+            if (command == SlurmCommands.Queue) return "42|test experiment|RUNNING|1:00|1:00:00|node1|None";
+            if (command == SlurmCommands.Nodes) return "NodeName=node1 State=MIXED CfgTRES=cpu=8,gres/gpu=4,gres/gpu:l40s=4 AllocTRES=cpu=2,gres/gpu=2,gres/gpu:l40s=2";
+            if (command == StorageCommands.Query()) return DemoSession.StorageQuotas();
+            throw new InvalidOperationException("Unexpected monitoring command.");
         }
         public async Task DisconnectAsync()
         {

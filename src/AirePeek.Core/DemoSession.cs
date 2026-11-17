@@ -62,11 +62,30 @@ public sealed class DemoSession : ICommandSession
             _ => NormalNodes
         });
         if (command.StartsWith("LC_ALL=C sacct ", StringComparison.Ordinal)) return Task.FromResult(_step == 2 ? "482119|COMPLETED|0:0" : "");
-        throw new RemoteCommandException("Demo only supports read-only Slurm queries.");
+        if (command == StorageCommands.Query(ClusterId)) return Task.FromResult(StorageQuotas(ClusterId, Scenario == DemoScenario.Partial));
+        throw new RemoteCommandException("Demo only supports read-only monitoring queries.");
     }
 
     public Task DisconnectAsync() { IsConnected = false; return Task.CompletedTask; }
     public ValueTask DisposeAsync() { IsConnected = false; return ValueTask.CompletedTask; }
+
+    public static string StorageQuotas(string clusterId = ClusterCatalog.AireId, bool partial = false)
+    {
+        bool calder = ClusterCatalog.Get(clusterId).Id == ClusterCatalog.CalderId;
+        string scratch = calder ? "/scratch-calder/users/demo" : "/mnt/scratch/demo";
+        return $"""
+            HPCPEEK_HOME|/users/demo|user
+            Disk quotas for user demo:
+            Filesystem blocks quota limit grace files quota limit grace
+            homes:/users 16777216 68157440 68157440 2000 1500000 1500000
+            HPCPEEK_HOME_END
+            HPCPEEK_SCRATCH|{scratch}|{(calder ? "project 1234" : "user")}
+            Disk quotas for {(calder ? "project 1234" : "user demo")}:
+            Filesystem kbytes quota limit grace files quota limit grace
+            {(partial ? "" : $"{scratch} {(calder ? 644245094 : 966367642)} 1073741824 1073741824 - 10000 1500000 1500000 -")}
+            HPCPEEK_SCRATCH_END
+            """;
+    }
 
     /// <summary>Simulated occupancy on the published seven-by-eight H200 NVL configuration. Not live readings.</summary>
     public static string Calder7Nodes { get; } = BuildCalderNodes(false);

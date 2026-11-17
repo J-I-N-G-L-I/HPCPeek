@@ -6,6 +6,47 @@ public class MonitorServiceTests
 {
     private const string Pending = "123_2|train|PENDING|0:00|12:00:00|(null)|Resources";
     private const string Running = "123_2|train|RUNNING|0:12|12:00:00|gpu01|None";
+
+    [Fact]
+    public async Task ClearCompletedKeepsActiveAndUnconfirmedJobsAndDoesNotRestoreClearedHistory()
+    {
+        var (session, clock, monitor) = await Create(Running + "\n124|failed|RUNNING|0:12|1:00|gpu01|None\n125|unknown|RUNNING|0:12|1:00|gpu01|None");
+        await monitor.RefreshAsync();
+        session.Queue = Pending.Replace("123_2", "126", StringComparison.Ordinal) + "\n127|active|RUNNING|0:12|1:00|gpu01|None";
+        session.Accounting = "123_2|COMPLETED|0:0\n124|FAILED|1:0";
+        clock.Advance(TimeSpan.FromSeconds(15)); await monitor.RefreshAsync();
+        Assert.Equal(3, monitor.Jobs!.Departed.Count);
+        var sampledAt = monitor.Jobs.SampledAt;
+        monitor.ClearCompletedJobs();
+        Assert.Equal("125", Assert.Single(monitor.Jobs.Departed).Job.Id);
+        Assert.Equal(2, monitor.Jobs.Jobs.Count);
+        Assert.Equal(sampledAt, monitor.Jobs.SampledAt);
+        clock.Advance(TimeSpan.FromMinutes(5)); await monitor.PollAsync();
+        Assert.Equal("125", Assert.Single(monitor.Jobs.Departed).Job.Id);
+        Assert.Contains(monitor.Jobs.Jobs, j => j.IsRunning);
+        Assert.Contains(monitor.Jobs.Jobs, j => j.IsPending);
+    }
+
+    [Fact]
+    public async Task PartialAndFailedQuotaRefreshRetainOriginalSampleDatesWithoutBlockingJobs()
+    {
+        var (session, clock, monitor) = await Create();
+        await monitor.PollAsync();
+        var original = monitor.Storage!;
+        session.Storage = DemoSession.StorageQuotas(partial: true);
+        clock.Advance(TimeSpan.FromMinutes(5)); await monitor.PollAsync();
+        Assert.Equal(clock.GetUtcNow(), monitor.Storage!.Home.SampledAt);
+        Assert.Equal(original.Scratch.SampledAt, monitor.Storage.Scratch.SampledAt);
+        Assert.Equal(original.Scratch.UsedBytes, monitor.Storage.Scratch.UsedBytes);
+        Assert.NotNull(monitor.StorageError);
+        var retained = monitor.Storage;
+        session.StorageFailure = new RemoteCommandException("unsupported");
+        clock.Advance(TimeSpan.FromMinutes(5)); await monitor.PollAsync();
+        Assert.Same(retained, monitor.Storage);
+        Assert.Equal(clock.GetUtcNow(), monitor.Jobs!.SampledAt);
+        Assert.Equal(clock.GetUtcNow(), monitor.Gpus!.SampledAt);
+        Assert.False(monitor.IsDisconnected);
+    }
     private static async Task<(FakeSession Session, TestClock Clock, MonitorService Monitor)> Create(string queue = Pending)
     {
         var session = new FakeSession { Queue = queue };
@@ -342,8 +383,8 @@ public class MonitorServiceTests
     {
         public bool IsConnected { get; private set; }
         public int ConnectionCount, QueueCount, NodeCount;
-        public string Queue = "", Accounting = "", LastAccountingCommand = "";
-        public Exception? GpuFailure, AccountingFailure;
+        public string Queue = "", Accounting = "", LastAccountingCommand = "", Storage = DemoSession.StorageQuotas();
+        public Exception? GpuFailure, AccountingFailure, StorageFailure;
         public Func<string, Task>? BeforeExecute;
         public Task ConnectAsync(ConnectionProfile profile, IAuthenticationUI authenticationUI, IHostKeyStore hostKeys, CancellationToken cancellationToken = default)
         { IsConnected = true; ConnectionCount++; return Task.CompletedTask; }
@@ -355,6 +396,7 @@ public class MonitorServiceTests
             if (BeforeExecute is not null) await BeforeExecute(command);
             if (command == SlurmCommands.Queue) return Queue;
             if (command == SlurmCommands.Nodes) return GpuFailure is not null ? throw GpuFailure : DemoSession.NormalNodes;
+            if (command == StorageCommands.Query()) return StorageFailure is not null ? throw StorageFailure : Storage;
             LastAccountingCommand = command;
             return AccountingFailure is not null ? throw AccountingFailure : Accounting;
         }

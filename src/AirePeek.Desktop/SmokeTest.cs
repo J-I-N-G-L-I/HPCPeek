@@ -64,34 +64,64 @@ internal static class SmokeTest
             Check(window.VisibleNodeTiles.Count == 28 && window.VisibleNodeTiles.Count(n => n.Availability == GpuNodeAvailability.Full) == 24 && window.VisibleNodeTiles.Count(n => n.Availability == GpuNodeAvailability.Unavailable) == 3, "Node matrix represents all 28 real node names, including three unavailable nodes");
             var calderCapacity = window.Workspace[ClusterCatalog.CalderId].Monitor!.Gpus!.Summarize("H200NVL", 1);
             Check(calderCapacity.Configured == 56 && calderCapacity.Unallocated == 20 && calderCapacity.MaxPerNode == 8 && calderCapacity.ExcludedNodes.Count == 1, "Calder sample deduplicates seven H200 NVL nodes: 56 configured, 20 eligible free, eight max per node");
-            Check(window.Width == 340 && window.Height == MainWindow.CompactHeight && MainWindow.CompactHeight == 148, "Compact window is 340 by 148 DIP");
+            Check(window.Width == WindowSizing.CompactWidth && window.Height == MainWindow.CompactHeight
+                && WindowSizing.CompactWidth == 320 && MainWindow.CompactHeight == 168, "Compact window is 320 by 168 DIP");
             Check(window.Title == "HPCPeek", "Official product name is HPCPeek");
             CheckRoundedWindow(window, Check);
             var compactGroups = window.GetVisualDescendants().OfType<StackPanel>().Single(p => p.Name == "CompactClusters");
+            var compactStorage = window.GetVisualDescendants().OfType<StackPanel>().Single(p => p.Name == "CompactStorage");
             var groupOrigin = compactGroups.TranslatePoint(default, window)!.Value;
-            var metricEnd = window.ExpandButton.GetVisualDescendants().OfType<TextBlock>()
-                .Max(t => t.TranslatePoint(default, window)!.Value.X + t.Bounds.Width);
-            Check(groupOrigin.X <= 170 && groupOrigin.X - metricEnd >= 20,
-                "Compact cluster overviews sit further left with at least 20 DIP clear of job numbers");
+            var storageOrigin = compactStorage.TranslatePoint(default, window)!.Value;
+            var metricOrigin = window.ExpandButton.TranslatePoint(default, window)!.Value;
+            Check(storageOrigin.Y >= metricOrigin.Y + window.ExpandButton.Bounds.Height
+                && Math.Abs(storageOrigin.X - metricOrigin.X) < 1
+                && groupOrigin.X - (storageOrigin.X + compactStorage.Bounds.Width) >= 8
+                && groupOrigin.X + compactGroups.Bounds.Width <= window.Width - 14,
+                "Compact storage sits below job numbers and clear of the GPU overviews without overlap");
+            Check(compactStorage.Children.Count == 2 && new[] { "Home", "Scratch" }.All(label => compactStorage.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == label))
+                && monitor.Storage?.Home.Fraction is not null && monitor.Storage.Scratch.Fraction is not null,
+                "Two horizontal storage bars show Home and Scratch quotas from the selected cluster");
+            foreach (var (name, index) in new[] { ("Running", 0), ("Queued", 1) })
+            {
+                var metricLabel = window.ExpandButton.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == name);
+                var labelOrigin = metricLabel.TranslatePoint(default, window)!.Value;
+                var bar = compactStorage.Children[index];
+                var barOrigin = bar.TranslatePoint(default, window)!.Value;
+                Check(bar.Bounds.Width > bar.Bounds.Height * 2 && Math.Abs(barOrigin.X - labelOrigin.X) < 1
+                    && barOrigin.Y >= labelOrigin.Y + metricLabel.Bounds.Height + 10,
+                    $"{name}: its quota bar is aligned directly below the metric");
+            }
             foreach (var cluster in ClusterCatalog.All)
             {
                 var map = window.CompactNodes(cluster.Id);
+                var label = window.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "CompactClusterLabel-" + cluster.Id);
+                var labelOrigin = label.TranslatePoint(default, window)!.Value;
+                var mapOrigin = map.TranslatePoint(default, window)!.Value;
+                Check(Math.Abs(labelOrigin.X - mapOrigin.X) < 1 && labelOrigin.Y + label.Bounds.Height <= mapOrigin.Y,
+                    $"{cluster.Name}: its label sits above the matrix at the left edge");
                 Check(map.Tiles.Count == cluster.NodeCount && map.GetVisualDescendants().OfType<Button>().Count() == cluster.NodeCount,
                     $"{cluster.Name}: compact overview includes every sample node");
                 Check(map.GetVisualDescendants().OfType<Button>().All(b => !b.GetVisualDescendants().OfType<TextBlock>().Any()
                     && !string.IsNullOrWhiteSpace(AutomationProperties.GetName(b))),
                     $"{cluster.Name}: compact tiles are color-only with explicit accessible capacity/status");
             }
+            var aireOrigin = window.CompactNodes(ClusterCatalog.AireId).TranslatePoint(default, window)!.Value;
+            var calderOrigin = window.CompactNodes(ClusterCatalog.CalderId).TranslatePoint(default, window)!.Value;
+            Check(Math.Abs(aireOrigin.X - calderOrigin.X) < 1 && calderOrigin.Y >= aireOrigin.Y + window.CompactNodes(ClusterCatalog.AireId).Bounds.Height + 8,
+                "Compact GPU matrices share a left edge with Calder below Aire");
             Check(window.ClusterModelSelector.Items.Count == 2 && window.ClusterModelSelector.Items.Cast<object>().Any(item => item.ToString() == "Calder · H200 NVL"), "Cluster selector offers Aire L40S and Calder H200 NVL without a Need filter");
             Check(new[] { "Running", "Queued" }.All(label => window.CaptureRoot.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == label)), "Default interface is English");
-            Check(window.CaptureRoot.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.StartsWith("Jobs ") == true && t.Text.Contains("GPUs ")), "Freshness explicitly labels Jobs and GPUs");
+            Check(window.CaptureRoot.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.StartsWith("Refresh ") == true), "Header shows elapsed time since refresh");
             Check(!window.IsUserSignedIn && AutomationProperties.GetName(window.LoginIndicator)?.Contains("no account signed in") == true, "Demo does not claim the user is signed in");
             await CheckClusterSwitchingAsync(window, Check);
             await CheckElapsedTimerAsync(window, Check);
             var initialPosition = window.Position;
             int? connections = controller.DemoConnectionCount;
             window.SetExpanded(true); await FrameAsync(window);
-            Check(window.Width == 340 && window.Height <= 720 && window.Height > MainWindow.CompactHeight && window.IsExpanded, "Details expand at the same width within the native work area");
+            Check(window.Width == WindowSizing.CompactWidth && window.Height <= 720 && window.Height > MainWindow.CompactHeight && window.IsExpanded, "Details expand at the same width within the native work area");
+            var clearCompleted = window.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "ClearCompletedJobs");
+            Check(clearCompleted.Content?.ToString() == "Clear completed" && !clearCompleted.IsEnabled,
+                "My jobs offers Clear completed and disables it when no confirmed finished jobs exist");
             await CheckNodeSelectionAsync(window, output, Check);
             var selected = window.JobRows["482087_12"];
             selected.Toggle(); window.ScrollOffset = new Vector(0, 45); await FrameAsync(window);
@@ -125,6 +155,7 @@ internal static class SmokeTest
             window.ShowPanel(); await FrameAsync(window);
             Check(controller.DemoConnectionCount == connections, "Showing a hidden panel does not authenticate");
             Check(window.MoreMenu.Items.Count == 5 && window.MoreMenu.Items.OfType<MenuItem>().Count() == 3, "More menu has three scoped action groups");
+            Check(window.MoreMenu.Items.OfType<MenuItem>().First().Header?.ToString() == "Refresh", "More menu uses the concise Refresh label");
             Check(window.JobRows.Values.All(r => r.JobMenu.Items.OfType<MenuItem>().Count() == 3), "Job menus contain only three job actions");
 
             App.ApplyTheme("light");
@@ -165,7 +196,7 @@ internal static class SmokeTest
             await File.WriteAllTextAsync(Path.Combine(output, "smoke-result.json"), JsonSerializer.Serialize(new SmokeSuccess(
                 true, checks, System.Runtime.InteropServices.RuntimeInformation.OSDescription,
                 System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(), window.RenderScaling,
-                "340x148", "340x720, capped to native work area", false, false, DateTimeOffset.UtcNow), EvidenceJsonContext.Default.SmokeSuccess));
+                $"{WindowSizing.CompactWidth}x{MainWindow.CompactHeight}", $"{WindowSizing.CompactWidth}x720, capped to native work area", false, false, DateTimeOffset.UtcNow), EvidenceJsonContext.Default.SmokeSuccess));
             await App.QuitAsync();
         }
         catch (Exception ex)
@@ -185,6 +216,10 @@ internal static class SmokeTest
         var calderRow = window.JobRows["482103"];
         check(window.Controller.ClusterId == ClusterCatalog.CalderId && window.VisibleNodeTiles.Count == 7
             && window.ClusterModelSelector.SelectedItem?.ToString() == "Calder · H200 NVL", "Switching to Calder selects its H200 model and seven-node details");
+        var scratch = window.GetVisualDescendants().OfType<StorageBar>().Single(bar => bar.Name == "ScratchStorage");
+        check(AutomationProperties.GetName(scratch)?.Contains("Project quota", StringComparison.Ordinal) == true
+            && window.Controller.Monitor?.Storage?.Scratch.Fraction is not null,
+            "Switching to Calder uses its storage sample and labels Scratch as a project quota");
         check(!window.ClusterModelSelector.Items.Cast<object>().Any(item => item.ToString()?.StartsWith("Calder · L40", StringComparison.OrdinalIgnoreCase) == true),
             "An obsolete Calder L40 preference does not create an unsupported model option");
         var nodeButtons = window.ExpandedNodeGrid.GetVisualDescendants().OfType<Button>().ToArray();

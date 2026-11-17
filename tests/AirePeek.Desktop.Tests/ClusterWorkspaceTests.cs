@@ -12,8 +12,8 @@ public sealed class ClusterWorkspaceTests : IDisposable
         new(store, id => sessions[id], action => action(), clock);
     private static Dictionary<string, FakeSession> Sessions() => new()
     {
-        [ClusterCatalog.AireId] = new("L40S", 3),
-        [ClusterCatalog.CalderId] = new("H200NVL", 8)
+        [ClusterCatalog.AireId] = new(ClusterCatalog.AireId, "L40S", 3),
+        [ClusterCatalog.CalderId] = new(ClusterCatalog.CalderId, "H200NVL", 8)
     };
 
     [Fact]
@@ -26,13 +26,13 @@ public sealed class ClusterWorkspaceTests : IDisposable
         Assert.All(sessions.Values, session => Assert.Equal(0, session.ConnectCount));
 
         await workspace.ConnectAsync("aire", Profile("aire"), Authentication);
-        Assert.Equal(2, sessions["aire"].CommandCount);
+        Assert.Equal(3, sessions["aire"].CommandCount);
         await workspace.SelectAsync("aire");
-        Assert.Equal(2, sessions["aire"].CommandCount);
+        Assert.Equal(3, sessions["aire"].CommandCount);
         clock.Advance(TimeSpan.FromSeconds(10)); await workspace.PollAsync();
-        Assert.Equal(2, sessions["aire"].CommandCount);
+        Assert.Equal(3, sessions["aire"].CommandCount);
         clock.Advance(TimeSpan.FromSeconds(5)); await workspace.PollAsync();
-        Assert.Equal(4, sessions["aire"].CommandCount);
+        Assert.Equal(6, sessions["aire"].CommandCount);
         Assert.Equal(1, sessions["aire"].ConnectCount);
         Assert.Equal(0, sessions["calder"].ConnectCount);
         Assert.Equal("aire", new SettingsStore(directory).Value.SelectedClusterId);
@@ -70,11 +70,11 @@ public sealed class ClusterWorkspaceTests : IDisposable
         var pending = workspace.PollAsync();
         await session.QueryEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await workspace.SelectAsync("aire");
-        Assert.Equal(4, session.CommandCount);
+        Assert.Equal(6, session.CommandCount);
         session.HoldQueries.SetResult(); await pending;
         session.HoldQueries = null;
         await workspace.PollAsync();
-        Assert.Equal(6, session.CommandCount);
+        Assert.Equal(9, session.CommandCount);
         Assert.Equal(1, session.ConnectCount);
     }
 
@@ -96,7 +96,7 @@ public sealed class ClusterWorkspaceTests : IDisposable
         await workspace.SelectAsync("aire"); await workspace.RefreshAsync();
         Assert.Same(aireSnapshot, workspace.Selected.Monitor!.Gpus);
         Assert.All(sessions.Values, session => Assert.Equal(1, session.ConnectCount));
-        Assert.Equal(2, sessions["aire"].CommandCount);
+        Assert.Equal(3, sessions["aire"].CommandCount);
     }
 
     [Fact]
@@ -239,7 +239,7 @@ public sealed class ClusterWorkspaceTests : IDisposable
         public override DateTimeOffset GetUtcNow() => now;
         public void Advance(TimeSpan time) => now += time;
     }
-    private sealed class FakeSession(string model, int cards) : ICommandSession
+    private sealed class FakeSession(string clusterId, string model, int cards) : ICommandSession
     {
         public bool IsConnected { get; private set; }
         public int ConnectCount, CommandCount;
@@ -255,8 +255,13 @@ public sealed class ClusterWorkspaceTests : IDisposable
             if (HoldQueries is { } pending) { QueryEntered.TrySetResult(); await pending.Task.WaitAsync(ct); }
             if (command == SlurmCommands.Queue)
                 return $"42|{model} training|RUNNING|1:00|12:00:00|gpu001|None\n43|next experiment|{(StartPending ? "RUNNING" : "PENDING")}|0:00|12:00:00|gpu001|Resources";
-            if (FailGpu) throw new RemoteCommandException("GPU query unavailable.");
-            return $"NodeName=gpu001 State=MIXED CfgTRES=gres/gpu={cards},gres/gpu:{model}={cards} AllocTRES=gres/gpu=1,gres/gpu:{model}=1";
+            if (command == StorageCommands.Query(clusterId)) return DemoSession.StorageQuotas(clusterId);
+            if (command == SlurmCommands.Nodes)
+            {
+                if (FailGpu) throw new RemoteCommandException("GPU query unavailable.");
+                return $"NodeName=gpu001 State=MIXED CfgTRES=gres/gpu={cards},gres/gpu:{model}={cards} AllocTRES=gres/gpu=1,gres/gpu:{model}=1";
+            }
+            throw new InvalidOperationException("Unexpected monitoring command.");
         }
         public Task DisconnectAsync() { IsConnected = false; return Task.CompletedTask; }
         public ValueTask DisposeAsync() { IsConnected = false; return ValueTask.CompletedTask; }

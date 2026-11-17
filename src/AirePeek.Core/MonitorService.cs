@@ -1,7 +1,8 @@
 namespace AirePeek.Core;
 
 /// <summary>Read-only sampling. It deliberately has no authority to authenticate or reconnect.</summary>
-public sealed class MonitorService(ICommandSession session, TimeProvider? timeProvider = null, TimeSpan? refreshInterval = null)
+public sealed class MonitorService(ICommandSession session, TimeProvider? timeProvider = null, TimeSpan? refreshInterval = null,
+    string clusterId = ClusterCatalog.AireId)
 {
     public static readonly TimeSpan DefaultRefreshInterval = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromSeconds(15);
@@ -11,11 +12,13 @@ public sealed class MonitorService(ICommandSession session, TimeProvider? timePr
     public static readonly TimeSpan GpuInterval = DefaultRefreshInterval;
     public static readonly TimeSpan ManualCooldown = TimeSpan.FromSeconds(15);
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
-    private readonly SemaphoreSlim _jobsGate = new(1, 1), _gpuGate = new(1, 1), _historyGate = new(1, 1);
+    private readonly SemaphoreSlim _jobsGate = new(1, 1), _gpuGate = new(1, 1), _storageGate = new(1, 1), _historyGate = new(1, 1);
+    private readonly string _storageCommand = StorageCommands.Query(clusterId);
     private readonly Dictionary<string, DepartedJob> _departed = new(StringComparer.Ordinal);
     private readonly HashSet<string> _notified = new(StringComparer.Ordinal);
     private Dictionary<string, SlurmJob> _previous = new(StringComparer.Ordinal);
     private DateTimeOffset _lastJobsAttempt = DateTimeOffset.MinValue, _lastGpuAttempt = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastStorageAttempt = DateTimeOffset.MinValue;
     private DateTimeOffset _lastManual = DateTimeOffset.MinValue, _lastHistoryAttempt = DateTimeOffset.MinValue;
     private bool _hasBaseline;
     private int _generation;
@@ -25,8 +28,10 @@ public sealed class MonitorService(ICommandSession session, TimeProvider? timePr
 
     public JobSnapshot? Jobs { get; private set; }
     public GpuSnapshot? Gpus { get; private set; }
+    public StorageSnapshot? Storage { get; private set; }
     public string? JobsError { get; private set; }
     public string? GpuError { get; private set; }
+    public string? StorageError { get; private set; }
     public string? HistoryError { get; private set; }
     public bool IsDisconnected { get; private set; } = !session.IsConnected;
     public TimeSpan RefreshInterval => TimeSpan.FromTicks(Interlocked.Read(ref _refreshIntervalTicks));
@@ -34,7 +39,7 @@ public sealed class MonitorService(ICommandSession session, TimeProvider? timePr
     public event Action? Updated;
     public event Action<JobNotification>? Notification;
 
-    /// <summary>Changes both sampling deadlines relative to their last attempts. Never authenticates or discards a snapshot.</summary>
+    /// <summary>Changes sampling deadlines relative to their last attempts. Never authenticates or discards a snapshot.</summary>
     public void ConfigureRefreshInterval(TimeSpan interval)
     {
         var ticks = ValidateInterval(interval).Ticks;
@@ -54,8 +59,8 @@ public sealed class MonitorService(ICommandSession session, TimeProvider? timePr
             _hasBaseline = false;
             _previous = new(StringComparer.Ordinal);
             IsDisconnected = !session.IsConnected;
-            JobsError = GpuError = HistoryError = null;
-            _lastJobsAttempt = _lastGpuAttempt = _lastManual = _lastHistoryAttempt = DateTimeOffset.MinValue;
+            JobsError = GpuError = StorageError = HistoryError = null;
+            _lastJobsAttempt = _lastGpuAttempt = _lastStorageAttempt = _lastManual = _lastHistoryAttempt = DateTimeOffset.MinValue;
             _historyOffset = 0;
         }
         Updated?.Invoke();
@@ -76,7 +81,7 @@ public sealed class MonitorService(ICommandSession session, TimeProvider? timePr
     {
         if (IsDisconnected) return;
         if (!session.IsConnected) { MarkDisconnected(); return; }
-        await Task.WhenAll(SampleJobsAsync(false, cancellationToken), SampleGpusAsync(false, cancellationToken)).ConfigureAwait(false);
+        await Task.WhenAll(SampleJobsAsync(false, cancellationToken), SampleGpusAsync(false, cancellationToken), SampleStorageAsync(false, cancellationToken)).ConfigureAwait(false);
     }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
@@ -87,7 +92,7 @@ public sealed class MonitorService(ICommandSession session, TimeProvider? timePr
             _lastManual = _clock.GetUtcNow();
         }
         if (!session.IsConnected) { MarkDisconnected(); return; }
-        await Task.WhenAll(SampleJobsAsync(true, cancellationToken), SampleGpusAsync(true, cancellationToken)).ConfigureAwait(false);
+        await Task.WhenAll(SampleJobsAsync(true, cancellationToken), SampleGpusAsync(true, cancellationToken), SampleStorageAsync(true, cancellationToken)).ConfigureAwait(false);
     }
 
     private async Task SampleJobsAsync(bool force, CancellationToken ct)
@@ -167,6 +172,61 @@ public sealed class MonitorService(ICommandSession session, TimeProvider? timePr
             HandleDisconnect(ex, generation); Updated?.Invoke();
         }
         finally { _gpuGate.Release(); }
+    }
+
+    private async Task SampleStorageAsync(bool force, CancellationToken ct)
+    {
+        if (!await _storageGate.WaitAsync(0, ct).ConfigureAwait(false)) return;
+        int generation = _generation;
+        try
+        {
+            var now = _clock.GetUtcNow();
+            if (!force && now - _lastStorageAttempt < RefreshInterval) return;
+            _lastStorageAttempt = now;
+            var sample = StorageParser.Parse(await session.ExecuteAsync(_storageCommand, ct).ConfigureAwait(false), now);
+            lock (_sync)
+            {
+                if (generation != _generation) return;
+                bool partial = sample.Home.SampledAt is null || sample.Scratch.SampledAt is null;
+                Storage = sample with
+                {
+                    Home = RetainStorage(sample.Home, Storage?.Home),
+                    Scratch = RetainStorage(sample.Scratch, Storage?.Scratch)
+                };
+                StorageError = partial ? "Some quotas are unavailable. Any retained values keep their original sample time." : null;
+            }
+            Updated?.Invoke();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            lock (_sync)
+            {
+                if (generation != _generation) return;
+                StorageError = DescribeError(ex, "Storage query failed. Showing the last successful quota snapshot.");
+            }
+            HandleDisconnect(ex, generation); Updated?.Invoke();
+        }
+        finally { _storageGate.Release(); }
+    }
+
+    private static StorageUsage RetainStorage(StorageUsage current, StorageUsage? previous) =>
+        current.SampledAt is null && previous?.SampledAt is not null && current.Path == previous.Path && current.Scope == previous.Scope
+            ? previous with { Note = current.Note + " Showing the last successful quota sample." } : current;
+
+    /// <summary>Clears local confirmed history only. Active jobs and unconfirmed departures are retained.</summary>
+    public void ClearCompletedJobs()
+    {
+        bool changed;
+        lock (_sync)
+        {
+            var completed = _departed.Where(pair => new AccountingResult(pair.Key, pair.Value.State, pair.Value.ExitCode).IsTerminal)
+                .Select(pair => pair.Key).ToArray();
+            foreach (var id in completed) _departed.Remove(id);
+            changed = completed.Length > 0;
+            if (changed && Jobs is not null) Jobs = Jobs with { Departed = _departed.Values.Reverse().Take(50).ToArray() };
+        }
+        if (changed) Updated?.Invoke();
     }
 
     public async Task ConfirmDepartedAsync(CancellationToken cancellationToken = default)
