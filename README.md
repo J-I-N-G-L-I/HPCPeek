@@ -62,3 +62,5 @@ HPCPeek runs read-only Slurm and storage-quota queries; it does not submit or ca
 This is an independent software, contributions, issues, and feature requests are welcome! Thank you for making this project better!
 
 Build and publishing instructions, including a Chinese step-by-step GitHub update and Release guide, are in [Build and release HPCPeek](docs/BUILD-CROSSPLATFORM.md).
+
+If an earlier v1.1.0 download shows `—` for both storage quotas after sign-in, install the quota hotfix from the same Release once its assets have been replaced. Check the updated `SHA256SUMS.txt`, extract into a new folder, then copy `portable-data` with the app closed. Keeping the same version number does not update an existing installation automatically. The [v1.1.0 replacement guide](docs/BUILD-CROSSPLATFORM.md#中文保留-v110-替换配额修复包) explains the publisher's steps.

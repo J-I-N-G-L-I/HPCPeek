@@ -61,9 +61,9 @@ The public application is named HPCPeek. Source directories and internal namespa
 
 Home and Scratch horizontal bars sit below Running and Queued respectively and follow the selected cluster. The Calder GPU matrix sits below Aire, with each cluster name above its matrix at the top left. Paths come from the remote account's `$HOME` and `$SCRATCH`, with cluster-specific fallbacks based on the authenticated username. For example, Aire commonly uses `/users/<username>` and `/mnt/scratch/<username>`; Calder uses `/scratch-calder/users/<username>` for Scratch. No example username is hardcoded.
 
-The monitor reads user quotas with `quota` for Home and Lustre `lfs quota` for Scratch. Calder Scratch can have a project quota, which is queried using the directory's project ID. Limits use a positive soft quota when available, otherwise the hard limit. These are quota usage and limits; the app does not substitute filesystem free space or run a recursive directory scan. A shared project quota can cover more than the displayed account directory. See Leeds' [storage filesystem documentation](https://arcdocs.leeds.ac.uk/calder/system/storage_filesystem.html) and [filesystem quota documentation](https://arcdocs.leeds.ac.uk/calder/usage/file_management/filesystem_quotas.html).
+The monitor uses the documented commands: `quota -s` for Home; `lfs quota -h -u "$USER" /scratch` for Aire Scratch; and `lfs quota -h -p "$(id -u)" /scratch-calder` for Calder Scratch, where Leeds identifies the project ID as the account UID. The application discovers the authenticated username with `id -un`. Query roots are separate from the personal directory paths shown in tooltips. Limits use a positive soft quota when available, otherwise the hard limit. The parser accepts wrapped rows, human-readable binary units and raw space counts; it reads the filesystem's aggregate space row and does not add inode counts or individual Lustre targets to that total. The app does not substitute filesystem free space or run a recursive directory scan. A shared project quota can cover more than the displayed account directory. See Leeds' [storage filesystem documentation](https://arcdocs.leeds.ac.uk/calder/system/storage_filesystem.html) and [filesystem quota documentation](https://arcdocs.leeds.ac.uk/calder/usage/file_management/filesystem_quotas.html).
 
-Unsupported commands, missing quota limits or an unavailable project ID produce an unknown reading. Previously successful readings remain dated when a later query fails. Quota queries use the existing authenticated SSH session and refresh interval. Offline Demo exercises the display but does not validate the site's live command output; before publishing, connect a real account and compare the displayed paths, limits and usage with the cluster's quota report.
+Remote shell scripts are normalized to LF before SSH execution, including when compiled from a Windows CRLF checkout. Unsupported commands, missing quota limits or an unavailable UID produce an unknown reading; hover the bar for the quota status. Previously successful readings remain dated when a later query fails. Quota queries use the existing authenticated SSH session and refresh interval. Offline Demo exercises the display but does not validate the site's live command output; before publishing, connect a real account and compare the displayed paths, limits and usage with the cluster's quota report.
 
 ## GitHub Actions and releases
 
@@ -76,7 +76,7 @@ git tag -a v1.1.0 -m "HPCPeek v1.1.0"
 git push origin v1.1.0
 ```
 
-The release version comes from the tag. Do not move an existing published tag to a different commit. Manual workflow runs build packages but do not publish a Release unless run against a version tag. The release job uses GitHub's temporary repository token; no HPC credentials are required.
+The release version comes from the tag. Normally, publish fixes with a new version tag. If deliberately replacing the already-published v1.1.0 quota build, follow the guarded replacement procedure below; it keeps the tag and rebuilt assets tied to the same corrected source. Manual workflow runs build packages but do not publish a Release unless run against a version tag. The release job uses GitHub's temporary repository token; no HPC credentials are required.
 
 Automated checks use synthetic data. They do not establish that a real Aire or Calder account can authenticate, or that a particular university Duo policy works.
 
@@ -107,7 +107,7 @@ See [Apple's notarization guide](https://developer.apple.com/documentation/secur
 
 ## 中文：更新 GitHub 仓库并生成新 Release
 
-以下以当前仓库 `J-I-N-G-L-I/HPCPeek`、`main` 分支和新版本 `v1.1.0` 为例。这次更新包含刷新时间文案、已结束任务清理，以及分别位于 Running / Queued 下方的 Home / Scratch 横向配额条；右侧 Aire 在上、Calder 在下，各自名称位于矩阵左上方。创建本文时，本地已有标签为 `v1.0.0`；正式操作前请先获取远端标签，确认 `v1.1.0` 尚未使用。这里的命令需要你执行，修改文档本身不会提交代码或发布 Release。
+本节保留首次发布的流程，以仓库 `J-I-N-G-L-I/HPCPeek`、`main` 分支和 `v1.1.0` 为例。`v1.1.0` 现在已经发布；本次配额修复若继续使用该版本，请直接使用下方“中文：保留 v1.1.0 替换配额修复包”，不要重复本节的新建标签命令。首次发布包含刷新时间文案、已结束任务清理，以及分别位于 Running / Queued 下方的 Home / Scratch 横向配额条；右侧 Aire 在上、Calder 在下，各自名称位于矩阵左上方。以下命令由维护者执行，修改文档本身不会提交代码或发布 Release。
 
 正式发布由 GitHub Actions 在 GitHub 的 runner 上完成，不要求先在本机生成三个平台的 ZIP。推荐顺序是：推送代码 → 普通提交检查通过 → 推送版本标签 → GitHub 自动打包并创建 Release → 在网页核对资源和编辑说明。
 
@@ -209,3 +209,70 @@ Changes in v1.1.0
 该命令自动运行现有测试、发布、打包、解压启动检查和性能采样。成功后，安装包位于 `artifacts/v1.1.0/HPCPeek-v1.1.0-win-x64-portable.zip`，校验文件位于同目录 `SHA256SUMS.txt`。此步骤不上传 GitHub，也不创建 Release。
 
 需要在本机同时交叉生成三个 ZIP 时，可改用 `-AllPlatforms`。Windows 上生成的 Mac 包仍需要 Mac 原生验证；正式发布优先使用上述标签工作流，让三个架构分别在原生系统上构建。GitHub 页面手动 **Run workflow** 选择 `main` 只构建并保留 Actions artifacts，不会发布 Release；版本发布使用标签推送即可。
+
+## 中文：保留 v1.1.0 替换配额修复包
+
+旧 Windows 包中的多行远端命令带有 CRLF 换行，发送到 Linux shell 后可能无法按预期执行；旧配额查询还依赖挂载点推断和目录项目 ID，解析器只接受原始整数。修复版统一远端脚本为 LF，并采用学校文档中的查询方式、兼容带单位和换行的配额输出。离线回归与打包检查不能替代真实账户验证；先用修复包登录，确认 Home / Scratch 与终端查询一致，再替换公开下载。
+
+保留 `v1.1.0` 的方式是：提交修复 → 普通 CI 通过 → 将同一个版本标签明确更新到修复提交 → 标签工作流重建三平台包并替换同名资源。这样下载页地址和文件名保持一致，但源码标签、ZIP 内容及 SHA-256 都会改变；已经下载旧包的用户需要重新下载。
+
+### 1. 确认此 Release 允许修改
+
+打开 [v1.1.0 Release](https://github.com/J-I-N-G-L-I/HPCPeek/releases/tag/v1.1.0)。如果标题下有 **Immutable** 标记，GitHub 不允许移动关联标签或替换资源，必须改用 `v1.1.1`；删除该 Release 也不能重新使用其标签名称。若仓库标签保护规则拒绝更新，也应使用新版本，不要关闭保护来强行覆盖。依据：[GitHub 不可变 Release 说明](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)。
+
+以下步骤仅适用于允许修改的 Release。本次保留版本号是针对已发布配额故障的明确修订，不是日常发布时移动旧标签的建议。
+
+### 2. 提交修复并推送 main
+
+在 PowerShell 中逐段运行，任何命令失败都先停止：
+
+```powershell
+Set-Location D:\Projects\Aire_Peek
+git status --short
+git diff --check
+git add -- README.md docs src tests
+git diff --cached --stat
+git commit -m "Fix quota collection and parsing on Leeds clusters"
+git push origin main
+```
+
+到 [Actions](https://github.com/J-I-N-G-L-I/HPCPeek/actions) 等待此次 `main` 提交的 **Test and portable desktop releases** 检查通过。若远端有新提交，先正常同步并解决冲突，不要强推 `main`。
+
+### 3. 有条件地更新 v1.1.0 标签
+
+先确认 `git log -1 --oneline` 是刚才通过 CI 的修复提交。以下命令读取远端旧标签的对象 ID，再将本地标签指向当前提交。最后的推送只在远端仍是刚读到的旧标签时执行，避免覆盖别人在这期间更新的标签。
+
+```powershell
+git log -1 --oneline
+$releaseTagRef = 'refs/tags/v1.1.0'
+$releaseTagLines = @(git ls-remote --refs origin $releaseTagRef)
+if ($LASTEXITCODE -ne 0 -or $releaseTagLines.Count -ne 1) {
+    throw 'Cannot identify the existing remote v1.1.0 tag. Stop here.'
+}
+$previousReleaseTag = ($releaseTagLines[0] -split '\s+')[0]
+git tag -f -a v1.1.0 -m "HPCPeek v1.1.0 quota hotfix" HEAD
+if ($LASTEXITCODE -ne 0) { throw 'Local tag update failed. Stop here.' }
+git push "--force-with-lease=${releaseTagRef}:$previousReleaseTag" origin "${releaseTagRef}:${releaseTagRef}"
+```
+
+这里更新的只有 `refs/tags/v1.1.0`，没有强推主分支。若推送显示 lease 不匹配，先检查远端为何变化，不要换成无条件 `--force`。此形式使用明确的旧对象 ID，参见 [Git push 文档](https://git-scm.com/docs/git-push)。
+
+### 4. 等待新的标签构建替换资源
+
+回到 Actions，打开这次标签更新新触发的运行记录，确认提交编号是修复提交。不要直接重跑之前失败版本的旧运行记录：旧记录仍可能指向旧提交。
+
+等待 `test`、三个 `package` 和 `release` 全部成功。现有发布脚本会更新同一个 Release，并通过 `gh release upload --clobber` 替换同名 ZIP 和 `SHA256SUMS.txt`，最后核对资源名和大小。上传不是一次性事务，必须等发布作业完成后再通知用户下载。依据：[GitHub CLI 上传与覆盖资源](https://cli.github.com/manual/gh_release_upload)。
+
+发布完成后，在 Release 的 **Edit** 页面为说明补充“v1.1.0 quota hotfix”、修复提交编号和替换日期。保留平台验证与 Mac 签名说明。发布脚本会重写说明，因此这一步放在上传结束之后。
+
+### 5. 确认下载的是修复包
+
+重新下载 Windows ZIP 和新的 `SHA256SUMS.txt`，在下载目录执行：
+
+```powershell
+Get-FileHash ./HPCPeek-v1.1.0-win-x64-portable.zip -Algorithm SHA256
+```
+
+结果应与新的校验文件一致。退出旧程序，将修复 ZIP 完整解压到新目录，再复制旧目录中的 `portable-data`；不要将新旧程序文件混放。启动新目录的 `HPCPeek.exe`，登录 Aire 后检查两个容量条。版本号仍为 `1.1.0`，因此区分旧包与修复包应使用本次 Release 的新 SHA-256，而不是只看文件名或版本号。
+
+若维护本地仓库的其他人已经获取过旧标签，需要在知晓此修订后显式刷新本地 `v1.1.0`；普通 `git fetch --tags` 可能拒绝覆盖旧标签。这不影响只下载 ZIP 的用户。
