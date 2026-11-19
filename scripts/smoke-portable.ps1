@@ -1,13 +1,13 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$ZipPath,
-    [ValidateSet('win-x64','osx-arm64','osx-x64')][string]$RuntimeIdentifier = 'win-x64',
+    [ValidateSet('win-x64','osx-arm64','osx-x64','linux-x64')][string]$RuntimeIdentifier = (& "$PSScriptRoot/get-native-rid.ps1"),
     [string]$OutputDirectory = '', [ValidateRange(10,180)][int]$TimeoutSeconds = 90
 )
 $ErrorActionPreference='Stop'
 $repoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $zipFullPath=(Resolve-Path -LiteralPath $ZipPath).Path
-$nativeRid=if($IsWindows){'win-x64'}elseif($IsMacOS){'osx-'+[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()}else{''}
+$nativeRid = & "$PSScriptRoot/get-native-rid.ps1"
 if($RuntimeIdentifier -ne $nativeRid){throw "Native startup cannot be tested here: package=$RuntimeIdentifier host=$nativeRid. Do not report this as passed."}
 if(-not $OutputDirectory){$OutputDirectory=Join-Path $repoRoot ('artifacts/smoke-'+[Guid]::NewGuid().ToString('N'))}
 $outputPath=[IO.Path]::GetFullPath($OutputDirectory)
@@ -19,12 +19,18 @@ if($IsMacOS){
     if($LASTEXITCODE -ne 0){throw 'macOS ZIP extraction failed.'}
     $binaryRoot=Join-Path $extractPath 'HPCPeek.app/Contents/MacOS'
     $exePath=Join-Path $binaryRoot 'HPCPeek'
-    & test -x $exePath
-    if($LASTEXITCODE -ne 0){throw 'Packaged macOS executable lost its executable permission.'}
     $runtimeLibrary='libcoreclr.dylib'
+} elseif ($IsLinux) {
+    & unzip -q $zipFullPath -d $extractPath
+    if ($LASTEXITCODE -ne 0) { throw 'Linux ZIP extraction failed.' }
+    $binaryRoot=$extractPath; $exePath=Join-Path $binaryRoot 'HPCPeek'; $runtimeLibrary='libcoreclr.so'
 }else{
     [IO.Compression.ZipFile]::ExtractToDirectory($zipFullPath,$extractPath)
     $binaryRoot=$extractPath; $exePath=Join-Path $binaryRoot 'HPCPeek.exe'; $runtimeLibrary='coreclr.dll'
+}
+if (-not $IsWindows) {
+    & test -x $exePath
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged executable lost its executable permission.' }
 }
 foreach($file in @($exePath,(Join-Path $binaryRoot 'HPCPeek.runtimeconfig.json'),(Join-Path $binaryRoot $runtimeLibrary))){
     if(-not(Test-Path -LiteralPath $file)){throw "Portable dependency missing: $file"}

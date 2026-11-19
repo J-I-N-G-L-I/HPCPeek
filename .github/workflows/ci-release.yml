@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.2.0' }}
+
 jobs:
   test:
     runs-on: windows-latest
@@ -52,6 +55,63 @@ jobs:
             artifacts/v*/smoke-*/evidence
           if-no-files-found: warn
 
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CAPTURE_BENCHMARK: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install virtual X11 desktop
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon openbox xcompmgr unzip libx11-6 libice6 libsm6 libfontconfig1 fonts-dejavu-core
+      - name: Test, build and run the extracted Linux desktop
+        run: |
+          dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" bash -eu <<'DESKTOP'
+          openbox &
+          xcompmgr -a &
+          options=()
+          if [[ "$CAPTURE_BENCHMARK" != true ]]; then options+=(-SkipBenchmark); fi
+          pwsh -NoProfile -File ./scripts/build-portable.ps1 -Version "$BUILD_TAG" -RuntimeIdentifier linux-x64 "${options[@]}"
+          DESKTOP
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Verify two-hop SSH with the published Linux runtime
+        shell: pwsh
+        run: |
+          python -m pip install paramiko==4.0.0
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot install the loopback SSH fixture.' }
+          $manifest = Get-Content "artifacts/$env:BUILD_TAG/manifest-linux-x64.json" -Raw | ConvertFrom-Json
+          ./tests/integration/run-protocol-smoke.ps1 -PublishedDirectory $manifest.smoke.Extracted -OutputDirectory artifacts/ssh-protocol-portable
+      - name: Retain Linux ZIP
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-linux-x64
+          path: artifacts/${{ env.BUILD_TAG }}/HPCPeek-${{ env.BUILD_TAG }}-linux-x64-portable.zip
+          if-no-files-found: error
+          compression-level: 0
+      - name: Retain Linux test, desktop and package evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-linux-x64
+          path: |
+            artifacts/test-results
+            artifacts/ssh-protocol-portable/*.json
+            artifacts/ssh-protocol-portable/*.txt
+            artifacts/v*/structure-linux-x64.json
+            artifacts/v*/size-linux-x64.json
+            artifacts/v*/manifest-linux-x64.json
+            artifacts/v*/smoke-*/evidence
+            artifacts/v*/benchmark-*/benchmark-result.json
+          if-no-files-found: warn
+
   package:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: test
@@ -75,8 +135,6 @@ jobs:
       - name: Native build, extract, Demo smoke and performance capture
         shell: pwsh
         env:
-          RELEASE_REF: ${{ github.ref_name }}
-          RELEASE_IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
           TARGET_RID: ${{ matrix.rid }}
           MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -85,7 +143,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
-          $version = if ($env:RELEASE_IS_TAG -eq 'true') { $env:RELEASE_REF } else { '1.0.0' }
+          $version = $env:BUILD_TAG
           $credentials = @('MACOS_CERTIFICATE_BASE64','MACOS_CERTIFICATE_PASSWORD','MACOS_SIGNING_IDENTITY','APPLE_ID','APPLE_TEAM_ID','APPLE_APP_SPECIFIC_PASSWORD')
           $present = @($credentials | Where-Object { [Environment]::GetEnvironmentVariable($_) }).Count
           if ($IsMacOS -and $present -gt 0 -and $present -lt $credentials.Count) { throw 'Partial macOS signing credentials: configure all six secrets, or none for an explicitly unsigned test build.' }
@@ -120,7 +178,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, package]
+    needs: [test, linux, package]
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
@@ -132,7 +190,7 @@ jobs:
           pattern: package-*
           merge-multiple: true
           path: release-assets
-      - name: Upload and verify three ZIPs plus SHA-256 in Release Assets
+      - name: Upload and verify four ZIPs plus SHA-256 in Release Assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

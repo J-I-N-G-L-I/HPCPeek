@@ -61,7 +61,8 @@ internal static class DialogUI
         window.Opened += (_, _) => CenterOnScreen(window);
         window.PropertyChanged += (_, args) =>
         {
-            if (args.Property == TopLevel.ClientSizeProperty && window.IsVisible)
+            // X11 may report the native title bar and borders after the client is first shown.
+            if (window.IsVisible && (args.Property == TopLevel.ClientSizeProperty || args.Property == TopLevel.FrameSizeProperty))
                 Dispatcher.UIThread.Post(() => CenterOnScreen(window), DispatcherPriority.Loaded);
         };
     }

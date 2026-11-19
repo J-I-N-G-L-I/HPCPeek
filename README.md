@@ -6,19 +6,33 @@ A quiet floating window for University of Leeds HPC jobs, GPU availability and s
 
 ## Download
 
-Open **Releases -> Assets** and download the ZIP for your computer. Extract the **whole archive**, then open `HPCPeek.exe` on Windows or `HPCPeek.app` on macOS.
+Download the ZIP for your computer from **Releases → Assets** and extract the whole archive. Open `HPCPeek.exe` on Windows or `HPCPeek.app` on macOS. On Linux, launch `./HPCPeek` from the extracted directory. [HPCPeek releases](https://github.com/J-I-N-G-L-I/HPCPeek/releases)
 
-| Platform | Package example (v1.1.0) |
+| Platform | Package example (v1.2.0) |
 | --- | --- |
-| Windows 11 x64 | `HPCPeek-v1.1.0-win-x64-portable.zip` |
-| macOS 15+ · Apple Silicon | `HPCPeek-v1.1.0-osx-arm64-portable.zip` |
-| macOS 15+ · Intel | `HPCPeek-v1.1.0-osx-x64-portable.zip` |
+| Windows 11 x64 | `HPCPeek-v1.2.0-win-x64-portable.zip` |
+| Linux x86-64 · Ubuntu 24.04 desktop | `HPCPeek-v1.2.0-linux-x64-portable.zip` |
+| macOS 15+ · Apple Silicon | `HPCPeek-v1.2.0-osx-arm64-portable.zip` |
+| macOS 15+ · Intel | `HPCPeek-v1.2.0-osx-x64-portable.zip` |
 
 The runtime is included. No separate .NET, Python, OpenSSH or MobaXterm installation is needed. Keep the application and its bundled files together; on Windows, use a folder you can write to.
 
 Mac builds without Developer ID signing and notarization have **`-unsigned-test`** in the filename. They are test builds, not Gatekeeper-approved releases. Check the release notes for platform validation and compare your download with `SHA256SUMS.txt`. GitHub's automatic **Source code** archives are not runnable packages.
 
-**Upgrading:** quit the old app first. On Windows, copy its `portable-data` folder into the new extracted folder to keep connection settings and trusted fingerprints. On Mac, settings remain in Application Support. Remembered passwords stay in this computer's system credential store; copying the app to another computer does not transfer them.
+**Upgrading.** Quit the old app first. On Windows, copy its `portable-data` folder into the new extracted folder to keep connection settings and trusted fingerprints. Linux and macOS keep settings in your user profile.
+
+### Run on Linux
+
+On an x86-64 Ubuntu 24.04 desktop, download the Linux ZIP and `SHA256SUMS.txt` into the same directory. Run these commands there. Check that the Linux ZIP shows **OK** before extracting it.
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS.txt
+unzip HPCPeek-v1.2.0-linux-x64-portable.zip -d HPCPeek-v1.2.0
+cd HPCPeek-v1.2.0
+./HPCPeek
+```
+
+Use `./HPCPeek --demo` to try the panel offline. The Linux build uses X11, including XWayland on Wayland desktops. Minimal Ubuntu installations may also need `libx11-6`, `libice6`, `libsm6`, `libfontconfig1`, and desktop fonts. [Avalonia Linux dependencies](https://docs.avaloniaui.net/docs/supported-platforms) · [.NET system libraries for Ubuntu](https://learn.microsoft.com/en-us/dotnet/core/install/linux-ubuntu-install)
 
 ## Connect
 
@@ -38,7 +52,7 @@ The compact panel is 320 × 168 logical pixels, with space between job counts, q
 - **My jobs** shows queue reasons, copyable job IDs, elapsed time, limits and nodes. Expanded running jobs have a locally updated elapsed estimate. **Clear completed** removes confirmed finished jobs from the selected cluster's local history, including failed, cancelled and timed-out jobs. Running, queued and unconfirmed jobs stay visible. It does not cancel jobs or delete server records or files. Completion notices wait for Slurm confirmation.
 - **Refresh 12s** in the header means 12 seconds since the selected cluster last returned a successful jobs, GPU or storage sample. Hover to inspect the separate source ages and errors; one successful source does not make another source's data current. The three-dot menu uses **Refresh** for a manual update. Automatic refresh defaults to five minutes; Settings offers 15, 30 or 60 minutes and a custom interval. After a disconnect, the last snapshot remains dated; choose **Reconnect** to authenticate again.
 
-Drag the header to move the window, pin it to keep it visible, or hide it in the tray/menu bar. Hiding keeps monitoring active; **Quit HPCPeek** closes the app's own connections.
+Drag the header to move the window or pin it to keep it visible. On Linux, minimize the panel and restore it from the desktop window switcher. On Windows and macOS, use the tray or menu bar to bring back a hidden panel. Monitoring continues until you choose **Quit HPCPeek**.
 
 <details>
 <summary>Expanded view</summary>
@@ -52,6 +66,8 @@ Screenshots use offline Demo data. Free GPUs do not guarantee an immediate start
 ## Passwords and privacy
 
 **This connection** is the default: no password is saved. Choose **Remember on this device** to store an ordinary password in your current user's **Windows Credential Manager** or **macOS Keychain**, scoped to the host, port and username. Passwords are never written to portable settings, exported preferences or application logs. Use **Settings → Connection → Forget saved passwords** to remove saved entries.
+
+On Linux, passwords are used for the current connection only. Connection settings and trusted host fingerprints are stored in `$XDG_CONFIG_HOME/HPCPeek` when that variable is an absolute path, otherwise in `~/.config/HPCPeek`.
 
 **Use one password for both hosts** is a separate, optional convenience for matching gateway and cluster passwords. **Duo approvals, SMS codes and other one-time answers are never saved or shared.** Remembering a password cannot bypass the university's authentication requirements. A changed host fingerprint stops the connection.
 

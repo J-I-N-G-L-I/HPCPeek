@@ -3,6 +3,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using AirePeek.Core;
+using AirePeek.Ssh;
 
 namespace AirePeek.Desktop.Dialogs;
 
@@ -14,7 +15,13 @@ public sealed class ConnectionWindow : Window
     private readonly TextBox gatewayHost = new() { Name = "GatewayHost", PlaceholderText = "Gateway host name" }, gatewayPort = new() { Name = "GatewayPort", Text = "22" }, gatewayUser = new() { Name = "GatewayUsername" };
     private readonly CheckBox sharedPassword = new() { Name = "SharePassword", Content = "Use one password for both hosts" };
     private readonly ComboBox cluster = new() { Name = "LoginCluster", Width = 140, HorizontalAlignment = HorizontalAlignment.Right };
-    private readonly ComboBox passwordStorage = new() { Name = "PasswordStorage", ItemsSource = new[] { "This connection", "Remember on this device" }, HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox passwordStorage = new()
+    {
+        Name = "PasswordStorage",
+        ItemsSource = OsPasswordStore.IsSupported ? new[] { "This connection", "Remember on this device" } : new[] { "This connection" },
+        IsEnabled = OsPasswordStore.IsSupported,
+        HorizontalAlignment = HorizontalAlignment.Stretch
+    };
     private readonly TextBlock passwordHint = DialogUI.Text("", 11, true);
     private readonly TextBlock targetLabel = new() { FontSize = 12, Margin = new Thickness(0, 0, 0, 6) };
     private readonly StackPanel gatewayFields = new() { Spacing = 12, IsVisible = false, Margin = new Thickness(0, 8, 0, 0) };
@@ -139,7 +146,7 @@ public sealed class ConnectionWindow : Window
             gatewayHost.Text = draft.GatewayHost; gatewayPort.Text = draft.GatewayPort; gatewayUser.Text = draft.GatewayUsername;
             previousUsername = draft.Username;
             sharedPassword.IsChecked = draft.SharePassword;
-            passwordStorage.SelectedIndex = draft.RememberPassword ? 1 : 0;
+            passwordStorage.SelectedIndex = draft.RememberPassword && OsPasswordStore.IsSupported ? 1 : 0;
             cluster.SelectedIndex = ClusterCatalog.All.ToList().FindIndex(c => c.Id == SelectedClusterId);
             var name = ClusterCatalog.Get(SelectedClusterId).Name;
             Title = $"Connect to {name}"; targetLabel.Text = $"{name} host";

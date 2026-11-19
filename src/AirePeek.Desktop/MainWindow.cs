@@ -75,7 +75,7 @@ internal sealed class MainWindow : Window
     {
         this.settings = settings; Workspace = workspace; authentication = new(this, text => Controller.ReportAuthentication(text));
         Title = "HPCPeek"; Icon = AppBrand.CreateWindowIcon(); Width = WindowSizing.CompactWidth; Height = CompactHeight; CanResize = false;
-        WindowDecorations = WindowDecorations.None; ShowInTaskbar = inspect; Topmost = settings.Value.IsPinned;
+        WindowDecorations = WindowDecorations.None; ShowInTaskbar = inspect || OperatingSystem.IsLinux(); Topmost = settings.Value.IsPinned;
         Background = Brushes.Transparent; TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
         FontFamily = OperatingSystem.IsWindows() ? new("Segoe UI") : FontFamily.Default;
         var surface = new Border { CornerRadius = new(10), BorderThickness = new(1), ClipToBounds = true };
@@ -223,8 +223,18 @@ internal sealed class MainWindow : Window
     internal void TogglePin() { settings.Value.IsPinned = !settings.Value.IsPinned; UpdatePin(); SavePreferences(); }
     internal void OpenMoreMenu() => MoreMenu.Open(more);
     private void UpdatePin() { Topmost = settings.Value.IsPinned; pin.Opacity = settings.Value.IsPinned ? 1 : .45; ToolTip.SetTip(pin, settings.Value.IsPinned ? "Pinned" : "Temporary panel"); }
-    internal void HidePanel() { SavePosition(); Hide(); }
-    internal void ShowPanel() { Show(); Activate(); }
+    internal void HidePanel()
+    {
+        SavePosition();
+        // A Linux desktop can have no tray host. Leave the monitor reachable in the window switcher.
+        if (OperatingSystem.IsLinux()) WindowState = WindowState.Minimized;
+        else Hide();
+    }
+    internal void ShowPanel()
+    {
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Show(); Activate();
+    }
     internal void PermitClose() { quitting = true; timer.Stop(); Workspace.Changed -= Update; }
     internal async Task ChooseConnectionAsync()
     {

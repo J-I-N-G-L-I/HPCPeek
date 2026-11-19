@@ -35,7 +35,7 @@ public sealed class ClusterPreferences
     public string GpuModel { get; set; } = "";
 }
 
-/// <summary>Only explicit, non-secret fields are persisted. The macOS app bundle is never modified.</summary>
+/// <summary>Persists explicit, non-secret preferences and trusted host fingerprints.</summary>
 public sealed class SettingsStore : IHostKeyStore
 {
     private readonly object sync = new();
@@ -44,15 +44,31 @@ public sealed class SettingsStore : IHostKeyStore
     public Preferences Value { get; }
 
     public SettingsStore(string? directory = null) : this(
-        directory ?? (OperatingSystem.IsMacOS()
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "HPCPeek")
-            : Path.Combine(AppContext.BaseDirectory, "portable-data")),
+        directory ?? DefaultDirectory(),
         directory is null && OperatingSystem.IsMacOS()
             ? new[] {
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "AirePeek"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "AIRE Peek")
             } : Array.Empty<string>())
     { }
+
+    private static string DefaultDirectory()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (OperatingSystem.IsLinux())
+            return LinuxConfigDirectory(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"), profile);
+        if (OperatingSystem.IsMacOS())
+            return Path.Combine(profile, "Library", "Application Support", "HPCPeek");
+        return Path.Combine(AppContext.BaseDirectory, "portable-data");
+    }
+
+    internal static string LinuxConfigDirectory(string? configHome, string userProfile)
+    {
+        // The XDG specification requires relative base-directory values to be ignored.
+        var root = !string.IsNullOrEmpty(configHome) && Path.IsPathFullyQualified(configHome)
+            ? configHome : Path.Combine(userProfile, ".config");
+        return Path.Combine(root, "HPCPeek");
+    }
 
     internal SettingsStore(string directory, string? legacyDirectory) : this(directory, legacyDirectory is null ? Array.Empty<string>() : new[] { legacyDirectory }) { }
 

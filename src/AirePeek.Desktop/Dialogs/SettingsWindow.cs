@@ -88,9 +88,12 @@ public sealed class SettingsWindow : Window
         UpdateConnectionSummary();
         panel.Children.Add(DialogUI.Group(connectionSummary));
         var edit = DialogUI.Button("Edit connection…", () => SaveAndClose(SettingsAction.Connect)); edit.HorizontalAlignment = HorizontalAlignment.Left; panel.Children.Add(edit);
-        var forget = new Button { Content = "Forget saved passwords", Name = "ForgetSavedPasswords", HorizontalAlignment = HorizontalAlignment.Left, MinHeight = 28, Padding = new Thickness(0, 4) };
-        forget.Classes.Add("quiet"); forget.Click += async (_, _) => await ForgetPasswordsAsync(); panel.Children.Add(forget);
-        ToolTip.SetTip(forget, "Remove remembered passwords for this cluster's target and gateway from this device. Shared gateway credentials also affect other cluster logins. Trusted host fingerprints are kept.");
+        if (OsPasswordStore.IsSupported)
+        {
+            var forget = new Button { Content = "Forget saved passwords", Name = "ForgetSavedPasswords", HorizontalAlignment = HorizontalAlignment.Left, MinHeight = 28, Padding = new Thickness(0, 4) };
+            forget.Classes.Add("quiet"); forget.Click += async (_, _) => await ForgetPasswordsAsync(); panel.Children.Add(forget);
+            ToolTip.SetTip(forget, "Remove remembered passwords for this cluster's target and gateway from this device. Shared gateway credentials also affect other cluster logins. Trusted host fingerprints are kept.");
+        }
         var refreshRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var refreshLabel = DialogUI.Text("Auto refresh"); refreshLabel.VerticalAlignment = VerticalAlignment.Center; refreshRow.Children.Add(refreshLabel);
         Grid.SetColumn(refresh, 1); refreshRow.Children.Add(refresh); panel.Children.Add(refreshRow);
@@ -104,7 +107,9 @@ public sealed class SettingsWindow : Window
         Avalonia.Automation.AutomationProperties.SetName(customSeconds, "Custom refresh interval in seconds, 15 to 86400");
         var location = new StackPanel { Spacing = 8, IsVisible = false };
         location.Children.Add(new SelectableTextBlock { Text = store.DirectoryPath, FontSize = 11, TextWrapping = TextWrapping.Wrap });
-        location.Children.Add(DialogUI.Text("Settings contain no passwords. Remembered passwords stay in this device's credential store. Duo responses are never saved.", 12, true));
+        location.Children.Add(DialogUI.Text(OsPasswordStore.IsSupported
+            ? "Settings contain no passwords. Remembered passwords stay in this device's credential store. Duo responses are never saved."
+            : "Passwords are used only for the current connection. Enter your password again the next time you sign in.", 12, true));
         var storage = DialogUI.Button("Settings location  ›", () => location.IsVisible = !location.IsVisible); storage.Classes.Add("quiet"); storage.Padding = new Thickness(0, 4); storage.MinHeight = 24; storage.HorizontalAlignment = HorizontalAlignment.Left;
         panel.Children.Add(storage); panel.Children.Add(location);
         return new ScrollViewer { Content = panel };
@@ -137,8 +142,11 @@ public sealed class SettingsWindow : Window
         var themeRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var label = DialogUI.Text("Theme"); label.VerticalAlignment = VerticalAlignment.Center; themeRow.Children.Add(label); Grid.SetColumn(theme, 1); themeRow.Children.Add(theme); panel.Children.Add(themeRow);
         var pinGroup = new StackPanel { Spacing = 3 };
-        pinGroup.Children.Add(pinned); pinGroup.Children.Add(new TextBlock { Text = "Unpinned panels hide when you switch apps.", FontSize = 12, Margin = new Thickness(25, 0, 0, 0), Classes = { "muted" } }); panel.Children.Add(pinGroup);
-        ToolTip.SetTip(pinned, "Hiding the panel keeps sampling. Escape collapses details, then hides the panel.");
+        var pinHint = OperatingSystem.IsLinux() ? "Unpinned panels minimize when you switch apps." : "Unpinned panels hide when you switch apps.";
+        pinGroup.Children.Add(pinned); pinGroup.Children.Add(new TextBlock { Text = pinHint, FontSize = 12, Margin = new Thickness(25, 0, 0, 0), Classes = { "muted" } }); panel.Children.Add(pinGroup);
+        ToolTip.SetTip(pinned, OperatingSystem.IsLinux()
+            ? "Sampling continues while minimized. Use the window switcher to return to HPCPeek."
+            : "Hiding the panel keeps sampling. Escape collapses details, then hides the panel.");
         panel.Children.Add(DialogUI.Divider());
         var transferRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var transferLabel = DialogUI.Text("Preferences"); transferLabel.VerticalAlignment = VerticalAlignment.Center; transferRow.Children.Add(transferLabel);

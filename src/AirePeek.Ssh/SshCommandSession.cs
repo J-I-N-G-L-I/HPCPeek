@@ -16,7 +16,7 @@ public sealed class SshCommandSession : ICommandSession, IPasswordStorageStatus
     private bool _disposed;
     private volatile bool _broken = true;
 
-    public SshCommandSession() : this(new SshNetWireFactory(), new OsPasswordStore()) { }
+    public SshCommandSession() : this(new SshNetWireFactory(), OsPasswordStore.IsSupported ? new OsPasswordStore() : null) { }
     internal SshCommandSession(ISshWireFactory factory, IPasswordStore? passwordStore = null) { _factory = factory; _passwordStore = passwordStore; }
     public string? PasswordStorageWarning { get; private set; }
 

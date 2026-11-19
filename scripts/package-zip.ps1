@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$SourceDirectory, [Parameter(Mandatory)][string]$ZipPath, [switch]$MacBundle)
+param([Parameter(Mandatory)][string]$SourceDirectory, [Parameter(Mandatory)][string]$ZipPath, [switch]$MacBundle, [switch]$LinuxPackage)
 $ErrorActionPreference = 'Stop'
 $source = (Resolve-Path -LiteralPath $SourceDirectory).Path
 $destination = [IO.Path]::GetFullPath($ZipPath)
@@ -24,6 +24,7 @@ try {
             $entry = $archive.CreateEntry($relative, [IO.Compression.CompressionLevel]::SmallestSize)
             # Unix permission bits survive cross-building on Windows; downloaders need not run chmod.
             $executable = $MacBundle -and ($relative -match '\.app/Contents/MacOS/HPCPeek$' -or $file.Extension -eq '.dylib')
+            if ($LinuxPackage) { $executable = $relative -cin @('HPCPeek', 'createdump') }
             $mode = if ($executable) { 33261 } else { 33188 }
             $entry.ExternalAttributes = [int]($mode -shl 16)
             $entry.LastWriteTime = [DateTimeOffset]$file.LastWriteTime
@@ -35,7 +36,7 @@ try {
 } finally { $stream.Dispose() }
 # ZipArchive creates Windows-hosted central-directory records on Windows. Mark the
 # creator as Unix so Archive Utility/unzip interprets the permission bits above.
-if ($MacBundle) {
+if ($IsWindows -and ($MacBundle -or $LinuxPackage)) {
     $zipStream = [IO.File]::Open($destination, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try {
         $tailLength = [int][Math]::Min($zipStream.Length, 65557)

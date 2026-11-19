@@ -8,6 +8,7 @@ HPCPeek bundles the .NET runtime and libraries listed below. For the exact versi
 | --- | --- |
 | [.NET runtime](https://github.com/dotnet/runtime) | Microsoft and .NET contributors. MIT; additional third-party notices are included in the release. |
 | [Avalonia](https://github.com/AvaloniaUI/Avalonia) | AvaloniaUI OÜ. [MIT](licenses/Avalonia-LICENSE.txt). |
+| [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | D-Bus integration used by Avalonia on Linux. [MIT and upstream attributions](licenses/Tmds.DBus-LICENSE.txt). |
 | [MicroCom](https://github.com/kekekeks/MicroCom) | Nikita Tsukanov. [MIT](licenses/MicroCom-LICENSE.txt). |
 | [SkiaSharp / HarfBuzzSharp](https://github.com/mono/SkiaSharp) | .NET Foundation contributors. MIT; notices for native Skia, HarfBuzz and their dependencies are collected from the NuGet packages. |
 | [ANGLE](https://github.com/google/angle) | Google and contributors. BSD-style; notices accompany the Windows native libraries. |

@@ -1,21 +1,21 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$')][string]$Version = '1.0.0',
-    [ValidateSet('win-x64','osx-arm64','osx-x64')][string]$RuntimeIdentifier = 'win-x64',
+    [ValidateSet('win-x64','osx-arm64','osx-x64','linux-x64')][string]$RuntimeIdentifier = (& "$PSScriptRoot/get-native-rid.ps1"),
     [string]$DotNet = '', [switch]$AllPlatforms, [switch]$SkipTests,
     [switch]$SkipSmoke, [switch]$SkipBenchmark, [switch]$SignMac
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $DotNet) {
-    $localSdk = Join-Path $repoRoot '.tools/dotnet/dotnet.exe'
+    $localSdk = Join-Path $repoRoot $(if ($IsWindows) { '.tools/dotnet/dotnet.exe' } else { '.tools/dotnet/dotnet' })
     $DotNet = if (Test-Path -LiteralPath $localSdk) { $localSdk } else { 'dotnet' }
 }
 $versionNumber = $Version.TrimStart('v')
 $releasePath = Join-Path $repoRoot "artifacts/v$versionNumber"
 New-Item -ItemType Directory -Force -Path $releasePath | Out-Null
-$targets = if ($AllPlatforms) { @('win-x64','osx-arm64','osx-x64') } else { @($RuntimeIdentifier) }
-$nativeRid = if ($IsWindows) { 'win-x64' } elseif ($IsMacOS) { 'osx-' + [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant() } else { '' }
+$targets = if ($AllPlatforms) { @('win-x64','osx-arm64','osx-x64','linux-x64') } else { @($RuntimeIdentifier) }
+$nativeRid = & "$PSScriptRoot/get-native-rid.ps1"
 Push-Location $repoRoot
 try {
     if (-not $SkipTests) { & (Join-Path $PSScriptRoot 'test.ps1') -DotNet $DotNet }
@@ -63,6 +63,7 @@ Do not disable system security protections. Public distribution requires the doc
             Copy-Item -Path (Join-Path $publishPath '*') -Destination $packageRoot -Recurse
         }
         Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination $packageRoot
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $packageRoot
         $docsOutput = Join-Path $packageRoot 'docs'
         New-Item -ItemType Directory -Force -Path $docsOutput | Out-Null
         foreach ($name in @('BUILD-CROSSPLATFORM.md','THIRD-PARTY-NOTICES.md')) {
@@ -84,7 +85,7 @@ Do not disable system security protections. Public distribution requires the doc
         # No development images, test fixtures, user settings, or symbols enter the release.
         $suffix = if ($isMacPackage -and -not $signed) { '-unsigned-test' } else { '' }
         $zipPath = Join-Path $releasePath "HPCPeek-v$versionNumber-$rid-portable$suffix.zip"
-        & (Join-Path $PSScriptRoot 'package-zip.ps1') -SourceDirectory $packageRoot -ZipPath $zipPath -MacBundle:$isMacPackage
+        & (Join-Path $PSScriptRoot 'package-zip.ps1') -SourceDirectory $packageRoot -ZipPath $zipPath -MacBundle:$isMacPackage -LinuxPackage:($rid -eq 'linux-x64')
         & (Join-Path $PSScriptRoot 'inspect-package.ps1') -ZipPath $zipPath -RuntimeIdentifier $rid -OutputPath (Join-Path $releasePath "structure-$rid.json") -RequireOptimized
         & (Join-Path $PSScriptRoot 'measure-package.ps1') -ZipPath $zipPath -RuntimeIdentifier $rid -OutputPath (Join-Path $releasePath "size-$rid.json")
         $execution = 'not-run-cross-compiled'; $smoke = $null; $benchmark = $null
@@ -106,5 +107,5 @@ Do not disable system security protections. Public distribution requires the doc
     $checksums = Get-ChildItem -LiteralPath $releasePath -File -Filter "HPCPeek-v$versionNumber-*.zip" | Sort-Object Name | ForEach-Object {
         "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
     }
-    $checksums | Set-Content -LiteralPath (Join-Path $releasePath 'SHA256SUMS.txt') -Encoding utf8NoBOM
+    [IO.File]::WriteAllText((Join-Path $releasePath 'SHA256SUMS.txt'), ($checksums -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
 } finally { Pop-Location }

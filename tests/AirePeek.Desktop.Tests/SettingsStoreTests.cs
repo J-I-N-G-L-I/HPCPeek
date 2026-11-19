@@ -11,6 +11,15 @@ public sealed class SettingsStoreTests : IDisposable
     private static readonly SshEndpoint Target = new("aire.example.test", 2222, "private-account");
 
     [Fact]
+    public void LinuxSettingsFollowAbsoluteXdgConfigHomeWithUserProfileFallback()
+    {
+        var configHome = Path.Combine(directory, "user configuration");
+        Assert.Equal(Path.Combine(configHome, "HPCPeek"), SettingsStore.LinuxConfigDirectory(configHome, directory));
+        foreach (var value in new[] { null, "", "relative-config" })
+            Assert.Equal(Path.Combine(directory, ".config", "HPCPeek"), SettingsStore.LinuxConfigDirectory(value, directory));
+    }
+
+    [Fact]
     public void PortablePreferencesRoundTripAndEnglishIsDefault()
     {
         var store = new SettingsStore(directory);

@@ -1,13 +1,13 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$ExecutablePath,
-    [ValidateSet('win-x64','osx-arm64','osx-x64')][string]$RuntimeIdentifier='win-x64',
+    [ValidateSet('win-x64','osx-arm64','osx-x64','linux-x64')][string]$RuntimeIdentifier = (& "$PSScriptRoot/get-native-rid.ps1"),
     [Parameter(Mandatory)][string]$OutputDirectory,
     [ValidateRange(1,10)][int]$Runs=3,
     [ValidateRange(15,300)][int]$IdleSeconds=30
 )
 $ErrorActionPreference='Stop'
-$nativeRid=if($IsWindows){'win-x64'}elseif($IsMacOS){'osx-'+[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()}else{''}
+$nativeRid = & "$PSScriptRoot/get-native-rid.ps1"
 if($RuntimeIdentifier -ne $nativeRid){throw "Cannot benchmark $RuntimeIdentifier on $nativeRid."}
 # Query resident pages directly: PrivateMemorySize64 is committed private memory, not
 # Task Manager's private working set. No working-set trimming or forced collection is used.
@@ -138,8 +138,18 @@ function Median($values){$middle=[int][Math]::Floor($values.Count/2);if($values.
 $medianStartup=Median $startupValues; $medianMemory=Median $memoryValues
 $medianPrivate=if($privateValues.Count){Median $privateValues}else{$null}
 $medianPrivateWorkingSet=if($privateWorkingSetValues.Count){Median $privateWorkingSetValues}else{$null}
-$cpuName=if($IsWindows){(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)}else{(& /usr/sbin/sysctl -n machdep.cpu.brand_string 2>$null)}
-$physicalMemory=if($IsWindows){[long](Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory}else{[long](& /usr/sbin/sysctl -n hw.memsize)}
+if ($IsLinux) {
+    $cpuName = [regex]::Match([IO.File]::ReadAllText('/proc/cpuinfo'), '(?m)^model name\s*:\s*(.+)$').Groups[1].Value.Trim()
+    $memTotal = [regex]::Match([IO.File]::ReadAllText('/proc/meminfo'), '(?m)^MemTotal:\s+(\d+) kB$')
+    if (-not $memTotal.Success) { throw 'Cannot read Linux MemTotal.' }
+    $physicalMemory = [long]$memTotal.Groups[1].Value * 1KB
+} elseif ($IsMacOS) {
+    $cpuName = & /usr/sbin/sysctl -n machdep.cpu.brand_string
+    $physicalMemory = [long](& /usr/sbin/sysctl -n hw.memsize)
+} else {
+    $cpuName = Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name
+    $physicalMemory = [long](Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+}
 [ordered]@{
     runtimeIdentifier=$RuntimeIdentifier;executable=$exe;os=[Runtime.InteropServices.RuntimeInformation]::OSDescription;
     executableSha256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash;runtimeConfigSha256=$runtimeConfigHash;
@@ -152,7 +162,7 @@ $physicalMemory=if($IsWindows){[long](Get-CimInstance Win32_ComputerSystem).Tota
     medianIdlePrivateBytes=$medianPrivate;medianIdlePrivateMiB=if($null -ne $medianPrivate){[Math]::Round($medianPrivate/1MB,2)}else{$null};
     medianIdlePrivateWorkingSetBytes=$medianPrivateWorkingSet;medianIdlePrivateWorkingSetMiB=if($null -ne $medianPrivateWorkingSet){[Math]::Round($medianPrivateWorkingSet/1MB,2)}else{$null};
     startupMethod='External process-start stopwatch to app signal after first demo render, polling every 10 ms. Fresh process and config for each run. OS filesystem cache is not purged; not a reboot-cold disk measurement.';
-    memoryMethod="Average of final 10 one-second samples after $IdleSeconds seconds idle per process; Windows total working set, private committed bytes and private working set; macOS RSS via ps. Median of run averages. Private working set counts resident non-shareable pages using PSAPI QueryWorkingSet; closest to Task Manager Memory for an active process, but sampling time and Task Manager's active-process accounting may differ. No forced GC or working-set trimming.";
+    memoryMethod="Average of final 10 one-second samples after $IdleSeconds seconds idle per process. Linux uses process RSS via WorkingSet64. macOS uses RSS via ps. Windows measures total working set, private committed bytes and resident non-shareable pages via PSAPI QueryWorkingSet. The summary uses the median of run averages.";
     measurements=$measurements
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'benchmark-result.json') -Encoding utf8NoBOM
 Write-Host "Benchmark evidence: $(Join-Path $output 'benchmark-result.json')"

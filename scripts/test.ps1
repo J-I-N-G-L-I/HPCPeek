@@ -3,7 +3,7 @@ param([string]$DotNet = '')
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $DotNet) {
-    $localSdk = Join-Path $repoRoot '.tools/dotnet/dotnet.exe'
+    $localSdk = Join-Path $repoRoot $(if ($IsWindows) { '.tools/dotnet/dotnet.exe' } else { '.tools/dotnet/dotnet' })
     $DotNet = if (Test-Path -LiteralPath $localSdk) { $localSdk } else { 'dotnet' }
 }
 Push-Location $repoRoot

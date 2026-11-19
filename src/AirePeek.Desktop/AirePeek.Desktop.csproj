@@ -34,6 +34,6 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
     <ProjectReference Include="../AirePeek.Core/AirePeek.Core.csproj" />
     <ProjectReference Include="../AirePeek.Ssh/AirePeek.Ssh.csproj" />
-    <AvaloniaResource Include="Assets/hpcpeek-app.ico;Assets/hpcpeek-tray-dark.ico;Assets/hpcpeek-tray-light.ico;Assets/Icons/*.svg" />
+    <AvaloniaResource Include="Assets/hpcpeek-app.ico;Assets/hpcpeek-tray-dark.ico;Assets/hpcpeek-tray-light.ico;Assets/hpcpeek-app.png;Assets/hpcpeek-tray-dark.png;Assets/hpcpeek-tray-light.png;Assets/Icons/*.svg" />
   </ItemGroup>
 </Project>

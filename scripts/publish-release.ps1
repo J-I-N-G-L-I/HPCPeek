@@ -5,20 +5,22 @@ $ErrorActionPreference='Stop'
 if(-not $Repository){throw 'GitHub repository is required.'}
 $assetRoot=(Resolve-Path -LiteralPath $AssetDirectory).Path
 $zips=@(Get-ChildItem -LiteralPath $assetRoot -File -Filter '*.zip')
-if($zips.Count -ne 3){throw 'A release requires exactly three architecture ZIPs.'}
-foreach($rid in @('win-x64','osx-arm64','osx-x64')){
-    $matching=@($zips | Where-Object { $_.Name -match ('^HPCPeek-'+[Regex]::Escape($Tag)+'-'+$rid+'-portable(-unsigned-test)?\.zip$') })
+$releaseTargets = @('win-x64','osx-arm64','osx-x64','linux-x64')
+if ($zips.Count -ne $releaseTargets.Count) { throw "A release requires one portable ZIP for each target: $($releaseTargets -join ', ')." }
+foreach($rid in $releaseTargets){
+    $suffix = if ($rid.StartsWith('osx-')) { '(-unsigned-test)?' } else { '' }
+    $matching=@($zips | Where-Object { $_.Name -cmatch ('^HPCPeek-'+[Regex]::Escape($Tag)+'-'+$rid+'-portable'+$suffix+'\.zip$') })
     if($matching.Count -ne 1){throw "Expected exactly one package for $rid."}
 }
 $checksums=Join-Path $assetRoot 'SHA256SUMS.txt'
-$zips | Sort-Object Name | ForEach-Object {'{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(),$_.Name} |
-    Set-Content -LiteralPath $checksums -Encoding utf8NoBOM
+$hashLines = $zips | Sort-Object Name | ForEach-Object {'{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(),$_.Name}
+[IO.File]::WriteAllText($checksums, ($hashLines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
 $unsigned=@($zips | Where-Object Name -Like '*-unsigned-test.zip').Count -gt 0
 $notes=Join-Path $assetRoot 'release-notes.md'
 $releaseText=@"
 HPCPeek $Tag — compact desktop Slurm monitor for Aire and Calder. English interface by default.
 
-Download the ZIP for your architecture and extract the complete archive. Windows includes its .NET runtime; macOS includes a movable .app and stores settings in Application Support.
+Download the ZIP for your operating system and processor, then extract the complete archive. Each package includes its .NET runtime. On Linux x64, use unzip and run ./HPCPeek in an X11 or XWayland desktop session. See the included README for system libraries. macOS includes a movable .app and stores settings in Application Support.
 
 Each package was built, extracted, launched in offline Demo and benchmarked on its native GitHub runner. Separate workflow evidence contains layout captures, test results and performance measurements. These checks use simulated data and do not validate real Aire or Calder accounts or campus Duo policy.
 
@@ -45,4 +47,4 @@ foreach($file in @($zips)+@(Get-Item -LiteralPath $checksums)){
     $found=@($assets | Where-Object name -EQ $file.Name)
     if($found.Count -ne 1 -or $found[0].size -ne $file.Length){throw "Release asset missing or wrong size after upload: $($file.Name)"}
 }
-Write-Host "Verified three ZIPs and SHA256SUMS.txt in $Repository Release $Tag."
+Write-Host "Verified $($zips.Count) ZIPs and SHA256SUMS.txt in $Repository Release $Tag."

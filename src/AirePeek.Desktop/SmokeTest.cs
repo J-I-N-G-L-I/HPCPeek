@@ -2,6 +2,7 @@ using System.Text.Json;
 using AirePeek.Core;
 using AirePeek.Desktop.Dialogs;
 using AirePeek.Desktop.Infrastructure;
+using AirePeek.Ssh;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -25,6 +26,18 @@ internal static class SmokeTest
         window.InvalidateVisual();
         await completion.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+    }
+
+    private static async Task<bool> WaitForWindowManagerAsync(Func<bool> condition)
+    {
+        // X11 reports frame placement and state changes independently of compositor frames.
+        if (OperatingSystem.IsLinux())
+        {
+            var wait = System.Diagnostics.Stopwatch.StartNew();
+            while (!condition() && wait.Elapsed < TimeSpan.FromSeconds(5))
+                await Task.Delay(20);
+        }
+        return condition();
     }
 
     public static async Task ReadyAsync(MainWindow window, string output)
@@ -151,9 +164,15 @@ internal static class SmokeTest
             Capture(window.CaptureRoot, Path.Combine(output, "partial-150.png"), 1.5);
             await window.StartDemoAsync(); await FrameAsync(window);
             connections = controller.DemoConnectionCount;
-            window.HidePanel(); Check(!window.IsVisible, "Hiding leaves application and monitor alive");
+            window.HidePanel();
+            if (OperatingSystem.IsLinux())
+                Check(window.ShowInTaskbar && await WaitForWindowManagerAsync(() => window.WindowState == WindowState.Minimized),
+                    "Minimizing keeps HPCPeek reachable in the Linux window switcher");
+            else
+                Check(!window.IsVisible, "Hiding leaves application and monitor alive");
             window.ShowPanel(); await FrameAsync(window);
-            Check(controller.DemoConnectionCount == connections, "Showing a hidden panel does not authenticate");
+            Check(window.IsVisible && window.WindowState == WindowState.Normal && controller.DemoConnectionCount == connections,
+                "Restoring the panel preserves the existing connection");
             Check(window.MoreMenu.Items.Count == 5 && window.MoreMenu.Items.OfType<MenuItem>().Count() == 3, "More menu has three scoped action groups");
             Check(window.MoreMenu.Items.OfType<MenuItem>().First().Header?.ToString() == "Refresh", "More menu uses the concise Refresh label");
             Check(window.JobRows.Values.All(r => r.JobMenu.Items.OfType<MenuItem>().Count() == 3), "Job menus contain only three job actions");
@@ -311,10 +330,13 @@ internal static class SmokeTest
             {
                 await FrameAsync(dialog); inspect?.Invoke(); await FrameAsync(dialog);
                 var area = owner.Screens.ScreenFromWindow(owner)!.WorkingArea;
-                var size = dialog.FrameSize ?? dialog.ClientSize;
-                check(Math.Abs(dialog.Position.X + size.Width * dialog.RenderScaling / 2 - (area.X + area.Width / 2d)) <= 3
-                    && Math.Abs(dialog.Position.Y + size.Height * dialog.RenderScaling / 2 - (area.Y + area.Height / 2d)) <= 3,
-                    $"{theme}: {name} opens in the center of the panel's display");
+                bool IsCentered()
+                {
+                    var size = dialog.FrameSize ?? dialog.ClientSize;
+                    return Math.Abs(dialog.Position.X + size.Width * dialog.RenderScaling / 2 - (area.X + area.Width / 2d)) <= 3
+                        && Math.Abs(dialog.Position.Y + size.Height * dialog.RenderScaling / 2 - (area.Y + area.Height / 2d)) <= 3;
+                }
+                check(await WaitForWindowManagerAsync(IsCentered), $"{theme}: {name} opens in the center of the panel's display");
                 check(owner.Position == panelPosition && dialog.Icon != null, $"{theme}: {name} has the HPCPeek icon and leaves panel position unchanged");
                 Capture(dialog, Path.Combine(output, $"{name}-{theme}.png"), 1);
             }
@@ -361,19 +383,28 @@ internal static class SmokeTest
             fields["TargetUsername"].Text = "demo-user";
             fields["TargetHost"].Text = "custom-aire.example.test";
             var storage = rememberedLogin.GetVisualDescendants().OfType<ComboBox>().Single(c => c.Name == "PasswordStorage");
-            storage.SelectedIndex = 1;
-            check(rememberedLogin.ReadProfile().RememberPassword && rememberedLogin.ReadProfile().Gateway == null,
-                $"{theme}: direct login can explicitly remember its password on this device");
+            if (OsPasswordStore.IsSupported)
+            {
+                storage.SelectedIndex = 1;
+                check(rememberedLogin.ReadProfile().RememberPassword && rememberedLogin.ReadProfile().Gateway == null,
+                    $"{theme}: direct login can explicitly remember its password on this device");
+            }
+            else
+            {
+                check(!storage.IsEnabled && storage.Items.Count == 1 && storage.SelectedIndex == 0 && !rememberedLogin.ReadProfile().RememberPassword,
+                    $"{theme}: login offers session-only passwords on this device");
+            }
             rememberedLogin.SelectCluster(ClusterCatalog.CalderId);
             check(rememberedLogin.ReadProfile().Target.Host == "calder.leeds.ac.uk" && rememberedLogin.ReadProfile().Target.Username == "demo-user"
                 && !rememberedLogin.ReadProfile().RememberPassword, $"{theme}: first login can switch to Calder without silently opting into password storage");
             rememberedLogin.SelectCluster(ClusterCatalog.AireId);
-            check(rememberedLogin.ReadProfile().Target.Host == "custom-aire.example.test" && rememberedLogin.ReadProfile().RememberPassword,
+            check(rememberedLogin.ReadProfile().Target.Host == "custom-aire.example.test" && rememberedLogin.ReadProfile().RememberPassword == OsPasswordStore.IsSupported,
                 $"{theme}: switching back preserves the unsent custom host and password-storage choice");
         });
-        var savedProfile = profile with { Target = endpoint with { Port = 2222 }, Gateway = gateway with { Port = 2200 } };
+        var savedProfile = profile with { Target = endpoint with { Port = 2222 }, Gateway = gateway with { Port = 2200 }, RememberPassword = true };
         var savedLogin = new ConnectionWindow(savedProfile);
-        check(savedLogin.ReadProfile() == savedProfile, $"{theme}: saved login restores both hosts, non-default ports, usernames and sharing choice");
+        var expectedProfile = savedProfile with { RememberPassword = OsPasswordStore.IsSupported };
+        check(savedLogin.ReadProfile() == expectedProfile, $"{theme}: saved login restores both hosts, non-default ports, usernames and supported password choices");
         await CaptureDialog(savedLogin, "connection-gateway", () =>
         {
             var username = savedLogin.GetVisualDescendants().OfType<TextBox>().Single(t => t.Name == "TargetUsername");
@@ -401,6 +432,8 @@ internal static class SmokeTest
         await CaptureDialog(calderSettings, "settings-calder", () =>
         {
             var selector = calderSettings.GetVisualDescendants().OfType<ComboBox>().Single(c => c.Name == "ConnectionCluster");
+            check(calderSettings.GetVisualDescendants().OfType<Button>().Any(b => b.Name == "ForgetSavedPasswords") == OsPasswordStore.IsSupported,
+                $"{theme}: Settings offers password removal on platforms with credential storage");
             check(selector.Items.Count == 2 && selector.SelectedItem?.ToString() == "Calder"
                 && calderSettings.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "calder.example.test:2223"),
                 $"{theme}: Settings selects Calder and shows its independent saved connection");
